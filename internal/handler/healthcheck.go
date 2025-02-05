@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/config"
+	"github.com/metinatakli/movie-reservation-system/internal/jsonutil"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 )
 
@@ -31,5 +31,5 @@ func (h *HealthcheckHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		SystemInfo: systemInfo,
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	jsonutil.WriteJSON(w, http.StatusOK, resp, nil)
 }
