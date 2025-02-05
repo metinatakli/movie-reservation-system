@@ -11,16 +11,20 @@ help:
 run:
 	go run ./cmd/api
 
-## tidy: format all .go files, and tidy and vendor module dependencies
+## generate: generate the OpenAPI server code
+.PHONY: generate
+generate:
+	go generate ./api	
+
+## tidy: format all .go files, and tidy module dependencies
 .PHONY: tidy
 tidy:
 	@echo 'Formatting go files...'
 	go fmt ./...
 	@echo 'Tidying module dependencies'
 	go mod tidy
-	@echo 'Verifying and vendoring module dependencies...'
+	@echo 'Verifying module dependencies...'
 	go mod verify
-	go mod vendor
 
 ## audit: run quality control checks
 .PHONY: audit

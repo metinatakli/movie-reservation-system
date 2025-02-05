@@ -3,8 +3,9 @@ package main
 import (
 	"net/http"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/metinatakli/movie-reservation-system/api"
 )
 
 func (app *application) routes() http.Handler {
@@ -14,9 +15,5 @@ func (app *application) routes() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("welcome"))
-	})
-
-	return r
+	return api.HandlerFromMux(app.handlers, r)
 }
