@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 )
@@ -25,11 +26,17 @@ var (
 type application struct {
 	config config
 	logger *slog.Logger
+	db     *pgxpool.Pool
 }
 
 type config struct {
 	port int
 	env  string
+	db   struct {
+		dsn          string
+		maxOpenConns int
+		maxIdleTime  time.Duration
+	}
 }
 
 func Run() error {
@@ -37,6 +44,10 @@ func Run() error {
 
 	flag.IntVar(&cfg.port, "port", 3000, "server port")
 	flag.StringVar(&cfg.env, "env", "dev", "Environment (dev|staging|prod)")
+
+	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "PostgreSQL DSN")
+	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
+	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max idle time for connections")
 
 	displayVersion := flag.Bool("version", false, "Display version and exit")
 
@@ -49,12 +60,45 @@ func Run() error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
+	db, err := newDatabasePool(cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	app := &application{
 		config: cfg,
 		logger: logger,
+		db:     db,
 	}
 
 	return app.run()
+}
+
+func newDatabasePool(cfg config) (*pgxpool.Pool, error) {
+	config, err := pgxpool.ParseConfig(cfg.db.dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	config.MaxConnIdleTime = cfg.db.maxIdleTime
+	config.MaxConns = int32(cfg.db.maxOpenConns)
+
+	db, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err = db.Ping(ctx)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return db, nil
 }
 
 func (app *application) run() error {
