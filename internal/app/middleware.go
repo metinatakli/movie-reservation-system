@@ -1,4 +1,4 @@
-package middleware
+package app
 
 import (
 	"net/http"
@@ -6,10 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/metinatakli/movie-reservation-system/api"
-	"github.com/metinatakli/movie-reservation-system/internal/jsonutil"
 )
 
-func RecoverPanic(next http.Handler) http.Handler {
+func (app *application) recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -19,7 +18,7 @@ func RecoverPanic(next http.Handler) http.Handler {
 					Timestamp: time.Now(),
 				}
 
-				jsonutil.WriteJSON(w, http.StatusInternalServerError, resp, http.Header{
+				app.writeJSON(w, http.StatusInternalServerError, resp, http.Header{
 					"Connection": []string{"close"},
 				})
 			}
@@ -29,12 +28,12 @@ func RecoverPanic(next http.Handler) http.Handler {
 	})
 }
 
-func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
+func (app *application) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	resp := api.ErrorResponse{
 		Message:   "Resource not found",
 		RequestId: middleware.GetReqID(r.Context()),
 		Timestamp: time.Now(),
 	}
 
-	jsonutil.WriteJSON(w, http.StatusNotFound, resp, nil)
+	app.writeJSON(w, http.StatusNotFound, resp, nil)
 }

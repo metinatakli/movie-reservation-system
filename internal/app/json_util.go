@@ -1,4 +1,4 @@
-package jsonutil
+package app
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func WriteJSON(w http.ResponseWriter, status int, data any, headers http.Header) error {
+func (app *application) writeJSON(w http.ResponseWriter, status int, data any, headers http.Header) error {
 	js, err := json.MarshalIndent(data, "", "\t")
 	if err != nil {
 		return err
@@ -29,7 +29,7 @@ func WriteJSON(w http.ResponseWriter, status int, data any, headers http.Header)
 	return nil
 }
 
-func ReadJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	maxBytes := 1_048_576
 	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBytes))
 
