@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gomodule/redigo/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
@@ -27,6 +28,7 @@ type application struct {
 	config config
 	logger *slog.Logger
 	db     *pgxpool.Pool
+	redis  *redis.Pool
 }
 
 type config struct {
@@ -35,6 +37,12 @@ type config struct {
 	db   struct {
 		dsn          string
 		maxOpenConns int
+		maxIdleTime  time.Duration
+	}
+	redis struct {
+		url          string
+		maxOpenConns int
+		maxIdleConns int
 		maxIdleTime  time.Duration
 	}
 }
@@ -48,6 +56,11 @@ func Run() error {
 	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "PostgreSQL DSN")
 	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
 	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max idle time for connections")
+
+	flag.StringVar(&cfg.redis.url, "redis-url", "", "Redis URL")
+	flag.IntVar(&cfg.redis.maxOpenConns, "redis-max-open-conns", 25, "Redis max open connections")
+	flag.IntVar(&cfg.redis.maxIdleConns, "redis-max-idle-conns", 10, "Redis max idle connections")
+	flag.DurationVar(&cfg.redis.maxIdleTime, "redis-max-idle-time", 2*time.Minute, "Redis max idle time for connections")
 
 	displayVersion := flag.Bool("version", false, "Display version and exit")
 
@@ -66,13 +79,43 @@ func Run() error {
 	}
 	defer db.Close()
 
+	redis, err := newRedisPool(cfg)
+	if err != nil {
+		return err
+	}
+	defer redis.Close()
+
 	app := &application{
 		config: cfg,
 		logger: logger,
 		db:     db,
+		redis:  redis,
 	}
 
 	return app.run()
+}
+
+func newRedisPool(cfg config) (*redis.Pool, error) {
+	pool := &redis.Pool{
+		MaxIdle:     cfg.redis.maxIdleConns,
+		MaxActive:   cfg.redis.maxOpenConns,
+		IdleTimeout: cfg.redis.maxIdleTime,
+		Dial: func() (redis.Conn, error) {
+			return redis.Dial("tcp", cfg.redis.url)
+		},
+	}
+
+	conn := pool.Get()
+	defer conn.Close()
+
+	_, err := conn.Do("PING")
+	if err != nil {
+		fmt.Printf("Redis connection error: %s", err.Error())
+		pool.Close()
+		return nil, err
+	}
+
+	return pool, nil
 }
 
 func newDatabasePool(cfg config) (*pgxpool.Pool, error) {

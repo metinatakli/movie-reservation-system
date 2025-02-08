@@ -9,7 +9,7 @@ help:
 ## run: run the application
 .PHONY: run
 run:
-	go run ./cmd/api -db-dsn=${DB_DSN}
+	go run ./cmd/api -db-dsn=${DB_DSN} -redis-url=${REDIS_URL}
 
 ## generate: generate the OpenAPI server code
 .PHONY: generate
