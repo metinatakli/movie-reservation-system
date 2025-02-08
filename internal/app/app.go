@@ -107,7 +107,7 @@ func (app *application) run() error {
 func (app *application) routes() http.Handler {
 	r := chi.NewRouter()
 
-	r.NotFound(app.notFoundHandler)
+	r.NotFound(app.notFoundResponse)
 
 	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
