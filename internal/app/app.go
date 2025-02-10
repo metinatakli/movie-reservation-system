@@ -14,9 +14,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-playground/validator/v10"
 	"github.com/gomodule/redigo/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/api"
+	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 )
 
@@ -25,10 +27,11 @@ var (
 )
 
 type application struct {
-	config config
-	logger *slog.Logger
-	db     *pgxpool.Pool
-	redis  *redis.Pool
+	config    config
+	logger    *slog.Logger
+	db        *pgxpool.Pool
+	redis     *redis.Pool
+	validator *validator.Validate
 }
 
 type config struct {
@@ -73,6 +76,8 @@ func Run() error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
+	validator := appvalidator.NewValidator()
+
 	db, err := newDatabasePool(cfg)
 	if err != nil {
 		return err
@@ -86,10 +91,11 @@ func Run() error {
 	defer redis.Close()
 
 	app := &application{
-		config: cfg,
-		logger: logger,
-		db:     db,
-		redis:  redis,
+		config:    cfg,
+		logger:    logger,
+		db:        db,
+		redis:     redis,
+		validator: validator,
 	}
 
 	return app.run()

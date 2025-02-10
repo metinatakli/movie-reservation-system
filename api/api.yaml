@@ -7,6 +7,8 @@ servers:
 tags:
   - name: health
     description: Related to server's health
+  - name: auth
+    description: Related to user authentication and registration
 paths:
   /healthcheck:
     get:
@@ -27,7 +29,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-
+  /users:
+    post:
+      tags:
+        - auth
+      summary: Register
+      operationId: registerUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful operation, activation mail is sent to user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Invalid request body syntax
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -61,19 +99,21 @@ components:
               type: array
               description: A list of validation errors that occurred.
               items:
-                type: object
-                required:
-                  - field
-                  - issue
-                properties:
-                  field:
-                    type: string
-                    description: The name of the invalid field.
-                    example: "email"
-                  issue:
-                    type: string
-                    description: A description of what is wrong with the field.
-                    example: "Email is not in a valid format"
+                $ref: '#/components/schemas/ValidationError'
+    ValidationError:
+      type: object
+      required:
+        - field
+        - issue
+      properties:
+        field:
+          type: string
+          description: The name of the invalid field.
+          example: "email"
+        issue:
+          type: string
+          description: A description of what is wrong with the field.
+          example: "must be a valid email address"
     HealthcheckResponse:
       type: object
       required:
@@ -98,3 +138,92 @@ components:
         version:
           type: string
           description: "The current version of the application or API."
+    RegisterRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - password
+        - birthDate
+        - gender
+      properties:
+        firstName:
+          type: string
+          description: "The user's first name. Must contain only alphabetic characters and be between 2 and 50 characters in length."
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=2,max=50,alpha"
+        lastName:
+          type: string
+          description: "The user's last name. Must contain only alphabetic characters and be between 2 and 50 characters in length."
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=2,max=50,alpha"
+        email:
+          type: string
+          description: "The user's email address. Must be a valid email format and cannot exceed 254 characters in length."
+          x-oapi-codegen-extra-tags:
+            validate: "required,email,max=254"
+        password:
+          type: string
+          description: "The user's password. Must be at least 8 characters long and contain only alphanumeric characters and special symbols (e.g., !@#$%^&*)."
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=8,password"
+        birthDate:
+          type: string
+          format: date
+          description: "The user's date of birth. Must be provided in ISO 8601 format (YYYY-MM-DD). The user must be at least 15 years old."
+          x-oapi-codegen-extra-tags:
+            validate: "required,age_check"
+        gender:
+          # https://github.com/oapi-codegen/oapi-codegen/issues/863
+          allOf:
+            - $ref: "#/components/schemas/Gender"
+          x-oapi-codegen-extra-tags:
+            validate: "required,gender"
+    RegisterResponse:
+      type: object
+      required:
+        - id
+        - createdAt
+        - firstName
+        - lastName
+        - email
+        - birthDate
+        - gender
+        - activated
+      properties:
+        id:
+          type: string
+          description: "The unique identifier for the user."
+        createdAt:
+          type: string
+          format: date-time
+          description: "The timestamp when the user was created."
+        firstName:
+          type: string
+          description: "The user's first name."
+        lastName:
+          type: string
+          description: "The user's last name."
+        email:
+          type: string
+          format: email
+          description: "The user's email address."
+        birthDate:
+          type: string
+          format: date
+          description: "The user's date of birth."
+        gender:
+          $ref: "#/components/schemas/Gender"
+          description: "The user's gender."
+        activated:
+          type: boolean
+          description: "Indicates whether the user's account is activated."
+    Gender:
+      type: string
+      enum:
+        - F
+        - M
+        - OTHER
+      x-oapi-codegen-extra-tags:
+        validate: "gender"
