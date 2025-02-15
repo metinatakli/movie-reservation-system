@@ -35,7 +35,8 @@ type application struct {
 	redis     *redis.Pool
 	validator *validator.Validate
 
-	userRepo domain.UserRepository
+	userRepo  domain.UserRepository
+	tokenRepo domain.TokenRepository
 }
 
 type config struct {
@@ -89,6 +90,7 @@ func Run() error {
 	defer db.Close()
 
 	userRepo := repository.NewPostgresUserRepository(db)
+	tokenRepo := repository.NewPostgresTokenRepository(db)
 
 	redis, err := newRedisPool(cfg)
 	if err != nil {
@@ -103,6 +105,7 @@ func Run() error {
 		redis:     redis,
 		validator: validator,
 		userRepo:  userRepo,
+		tokenRepo: tokenRepo,
 	}
 
 	return app.run()

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
@@ -52,6 +53,20 @@ func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	token, err := domain.GenerateToken(int64(user.ID), 10*time.Minute, domain.UserActivationScope)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	err = app.tokenRepo.Create(r.Context(), token)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	// TODO: send the token via email
 
 	resp := api.RegisterResponse{
 		Id:        user.ID,
