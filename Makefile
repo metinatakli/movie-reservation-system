@@ -13,7 +13,7 @@ confirm:
 ## run: run the application
 .PHONY: run
 run:
-	go run ./cmd/api -db-dsn=${DB_DSN} -redis-url=${REDIS_URL}
+	go run ./cmd/api -db-dsn=${DB_DSN} -redis-url=${REDIS_URL} -smtp-username=${SMTP_USERNAME} -smtp-password=${SMTP_PASSWORD}
 
 ## generate: generate the OpenAPI server code
 .PHONY: generate

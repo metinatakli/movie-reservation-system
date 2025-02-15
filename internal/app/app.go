@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/metinatakli/movie-reservation-system/internal/mailer"
 	"github.com/metinatakli/movie-reservation-system/internal/repository"
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
@@ -34,6 +35,7 @@ type application struct {
 	db        *pgxpool.Pool
 	redis     *redis.Pool
 	validator *validator.Validate
+	mailer    mailer.Mailer
 
 	userRepo  domain.UserRepository
 	tokenRepo domain.TokenRepository
@@ -53,6 +55,13 @@ type config struct {
 		maxIdleConns int
 		maxIdleTime  time.Duration
 	}
+	smtp struct {
+		host     string
+		port     int
+		username string
+		password string
+		sender   string
+	}
 }
 
 func Run() error {
@@ -69,6 +78,12 @@ func Run() error {
 	flag.IntVar(&cfg.redis.maxOpenConns, "redis-max-open-conns", 25, "Redis max open connections")
 	flag.IntVar(&cfg.redis.maxIdleConns, "redis-max-idle-conns", 10, "Redis max idle connections")
 	flag.DurationVar(&cfg.redis.maxIdleTime, "redis-max-idle-time", 2*time.Minute, "Redis max idle time for connections")
+
+	flag.StringVar(&cfg.smtp.host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
+	flag.IntVar(&cfg.smtp.port, "smtp-port", 2525, "SMTP port")
+	flag.StringVar(&cfg.smtp.username, "smtp-username", "", "SMTP username")
+	flag.StringVar(&cfg.smtp.password, "smtp-password", "", "SMTP password")
+	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "CineX <no-reply@cinex.metinatakli.net>", "SMTP sender")
 
 	displayVersion := flag.Bool("version", false, "Display version and exit")
 
@@ -104,6 +119,7 @@ func Run() error {
 		db:        db,
 		redis:     redis,
 		validator: validator,
+		mailer:    mailer.New(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
 		userRepo:  userRepo,
 		tokenRepo: tokenRepo,
 	}
