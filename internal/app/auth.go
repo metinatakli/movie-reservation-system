@@ -66,7 +66,23 @@ func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: send the token via email
+	go func() {
+		defer func() {
+			if err := recover(); err != nil {
+				app.logger.Error(fmt.Sprintf("panic occurred during sending activation mail: %v", err))
+			}
+		}()
+
+		data := map[string]any{
+			"activationToken": token.Plaintext,
+			"userID":          user.ID,
+		}
+
+		err = app.mailer.Send(user.Email, "user_welcome.tmpl", data)
+		if err != nil {
+			app.logger.Error(err.Error())
+		}
+	}()
 
 	resp := api.RegisterResponse{
 		Id:        user.ID,
