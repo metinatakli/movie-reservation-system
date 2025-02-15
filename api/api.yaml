@@ -191,9 +191,10 @@ components:
         - birthDate
         - gender
         - activated
+        - version
       properties:
         id:
-          type: string
+          type: integer
           description: "The unique identifier for the user."
         createdAt:
           type: string
@@ -207,7 +208,6 @@ components:
           description: "The user's last name."
         email:
           type: string
-          format: email
           description: "The user's email address."
         birthDate:
           type: string
@@ -219,6 +219,9 @@ components:
         activated:
           type: boolean
           description: "Indicates whether the user's account is activated."
+        version:
+          type: integer
+          description: "The user's current version"
     Gender:
       type: string
       enum:

@@ -18,6 +18,8 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/api"
+	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/metinatakli/movie-reservation-system/internal/repository"
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 )
@@ -32,6 +34,8 @@ type application struct {
 	db        *pgxpool.Pool
 	redis     *redis.Pool
 	validator *validator.Validate
+
+	userRepo domain.UserRepository
 }
 
 type config struct {
@@ -84,6 +88,8 @@ func Run() error {
 	}
 	defer db.Close()
 
+	userRepo := repository.NewPostgresUserRepository(db)
+
 	redis, err := newRedisPool(cfg)
 	if err != nil {
 		return err
@@ -96,6 +102,7 @@ func Run() error {
 		db:        db,
 		redis:     redis,
 		validator: validator,
+		userRepo:  userRepo,
 	}
 
 	return app.run()

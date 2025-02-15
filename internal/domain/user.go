@@ -1,0 +1,71 @@
+package domain
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	ErrUserAlreadyExists = errors.New("User already exists with email: %s")
+)
+
+type Gender string
+
+const (
+	Male   Gender = "M"
+	Female Gender = "F"
+	Other  Gender = "OTHER"
+)
+
+type User struct {
+	ID        int
+	FirstName string
+	LastName  string
+	Email     string
+	Password  password
+	BirthDate time.Time
+	Gender    Gender
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Activated bool
+	IsActive  bool
+	Version   int
+}
+
+type password struct {
+	plaintext *string
+	Hash      []byte
+}
+
+func (p *password) Set(plaintext string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), 12)
+	if err != nil {
+		return err
+	}
+
+	p.plaintext = &plaintext
+	p.Hash = hash
+
+	return nil
+}
+
+func (p *password) Matches(plaintext string) (bool, error) {
+	err := bcrypt.CompareHashAndPassword(p.Hash, []byte(plaintext))
+	if err != nil {
+		switch {
+		case errors.Is(err, bcrypt.ErrMismatchedHashAndPassword):
+			return false, nil
+		default:
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+type UserRepository interface {
+	Create(context.Context, *User) error
+}

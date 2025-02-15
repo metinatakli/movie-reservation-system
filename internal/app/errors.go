@@ -12,11 +12,12 @@ import (
 
 func (app *application) logError(r *http.Request, err error) {
 	var (
-		method = r.Method
-		uri    = r.URL.RequestURI()
+		method    = r.Method
+		uri       = r.URL.RequestURI()
+		requestId = middleware.GetReqID(r.Context())
 	)
 
-	app.logger.Error(err.Error(), "method", method, "uri", uri)
+	app.logger.Error(err.Error(), "method", method, "uri", uri, "request-id", requestId)
 }
 
 // The errorResponse() method is a generic helper for sending JSON-formatted error
@@ -51,7 +52,7 @@ func (app *application) badRequestResponse(w http.ResponseWriter, r *http.Reques
 	app.errorResponse(w, r, http.StatusBadRequest, err.Error())
 }
 
-func (app *application) unprocessableEntityResponse(w http.ResponseWriter, r *http.Request, err error) {
+func (app *application) failedValidationResponse(w http.ResponseWriter, r *http.Request, err error) {
 	var validationErrs []api.ValidationError
 
 	for _, err := range err.(validator.ValidationErrors) {
