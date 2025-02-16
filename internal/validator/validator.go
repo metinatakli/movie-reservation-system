@@ -17,6 +17,18 @@ var (
 	hasSpecialRgx = regexp.MustCompile(`[!@#$%^&*]`)
 )
 
+const (
+	ErrRequired        = "is required"
+	ErrInvalidEmail    = "must be a valid email address"
+	ErrMinLength       = "must be at least %s characters long"
+	ErrMaxLength       = "must be at most %s characters long"
+	ErrOnlyLetters     = "must contain only letters"
+	ErrAgeCheck        = "must be at least 15 years old"
+	ErrInvalidGender   = "is invalid"
+	ErrInvalidPassword = "must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, " +
+		"one number, and one special character (!@#$%^&*)."
+)
+
 func NewValidator() *validator.Validate {
 	validator := validator.New(validator.WithRequiredStructEnabled())
 
@@ -77,21 +89,20 @@ func validatePassword(fl validator.FieldLevel) bool {
 func ValidationMessage(err validator.FieldError) string {
 	switch err.Tag() {
 	case "required":
-		return "is required"
+		return ErrRequired
 	case "email":
-		return "must be a valid email address"
+		return ErrInvalidEmail
 	case "min":
-		return fmt.Sprintf("must be at least %s characters long", err.Param())
+		return fmt.Sprintf(ErrMinLength, err.Param())
 	case "max":
-		return fmt.Sprintf("must be at most %s characters long", err.Param())
+		return fmt.Sprintf(ErrMaxLength, err.Param())
 	case "alpha":
-		return "must contain only letters"
+		return ErrOnlyLetters
 	case "age_check":
-		return "must be at least 15 years old"
+		return ErrAgeCheck
 	case "password":
-		return "must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, " +
-			"one number, and one special character (!@#$%^&*)."
+		return ErrInvalidPassword
 	default:
-		return "is invalid"
+		return ErrInvalidGender
 	}
 }

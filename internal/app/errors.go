@@ -10,6 +10,11 @@ import (
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 )
 
+const (
+	ErrInternalServer = "The server encountered a problem and could not process your request"
+	ErrNotFound       = "The requested resource not found"
+)
+
 func (app *application) logError(r *http.Request, err error) {
 	var (
 		method    = r.Method
@@ -38,14 +43,11 @@ func (app *application) errorResponse(w http.ResponseWriter, r *http.Request, st
 
 func (app *application) serverErrorResponse(w http.ResponseWriter, r *http.Request, err error) {
 	app.logError(r, err)
-
-	message := "The server encountered a problem and could not process your request"
-	app.errorResponse(w, r, http.StatusInternalServerError, message)
+	app.errorResponse(w, r, http.StatusInternalServerError, ErrInternalServer)
 }
 
 func (app *application) notFoundResponse(w http.ResponseWriter, r *http.Request) {
-	message := "The requested resource not found"
-	app.errorResponse(w, r, http.StatusNotFound, message)
+	app.errorResponse(w, r, http.StatusNotFound, ErrNotFound)
 }
 
 func (app *application) badRequestResponse(w http.ResponseWriter, r *http.Request, err error) {
