@@ -165,9 +165,9 @@ components:
             validate: "required,email,max=254"
         password:
           type: string
-          description: "The user's password. Must be at least 8 characters long and contain only alphanumeric characters and special symbols (e.g., !@#$%^&*)."
+          description: "The user's password. Must be at least 8 characters long and at most 25 characters long. It must contain only alphanumeric characters and special symbols (e.g., !@#$%^&*)."
           x-oapi-codegen-extra-tags:
-            validate: "required,min=8,password"
+            validate: "required,password"
         birthDate:
           type: string
           format: date

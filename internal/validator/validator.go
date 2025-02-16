@@ -51,7 +51,7 @@ func validateBirthDate(fl validator.FieldLevel) bool {
 func validatePassword(fl validator.FieldLevel) bool {
 	password := fl.Field().String()
 
-	if len(password) < 8 {
+	if len(password) < 8 || len(password) > 25 {
 		return false
 	}
 
