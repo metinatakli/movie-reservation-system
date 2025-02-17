@@ -3,6 +3,8 @@ module github.com/metinatakli/movie-reservation-system
 go 1.24.0
 
 require (
+	github.com/alexedwards/scs/redisstore v0.0.0-20250212122300-421ef1d8611c
+	github.com/alexedwards/scs/v2 v2.8.0
 	github.com/getkin/kin-openapi v0.129.0
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-mail/mail/v2 v2.3.0

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexedwards/scs/redisstore"
+	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-playground/validator/v10"
@@ -30,12 +32,13 @@ var (
 )
 
 type application struct {
-	config    config
-	logger    *slog.Logger
-	db        *pgxpool.Pool
-	redis     *redis.Pool
-	validator *validator.Validate
-	mailer    mailer.Mailer
+	config         config
+	logger         *slog.Logger
+	db             *pgxpool.Pool
+	redis          *redis.Pool
+	validator      *validator.Validate
+	mailer         mailer.Mailer
+	sessionManager *scs.SessionManager
 
 	userRepo  domain.UserRepository
 	tokenRepo domain.TokenRepository
@@ -114,17 +117,28 @@ func Run() error {
 	defer redis.Close()
 
 	app := &application{
-		config:    cfg,
-		logger:    logger,
-		db:        db,
-		redis:     redis,
-		validator: validator,
-		mailer:    mailer.NewSMTPMailer(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
-		userRepo:  userRepo,
-		tokenRepo: tokenRepo,
+		config:         cfg,
+		logger:         logger,
+		db:             db,
+		redis:          redis,
+		validator:      validator,
+		mailer:         mailer.NewSMTPMailer(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
+		sessionManager: newSessionManager(redis),
+		userRepo:       userRepo,
+		tokenRepo:      tokenRepo,
 	}
 
 	return app.run()
+}
+
+func newSessionManager(pool *redis.Pool) *scs.SessionManager {
+	sessionManager := scs.New()
+
+	sessionManager.Store = redisstore.New(pool)
+	sessionManager.IdleTimeout = 20 * time.Minute
+	sessionManager.Cookie.Name = "session_id"
+
+	return sessionManager
 }
 
 func newRedisPool(cfg config) (*redis.Pool, error) {
