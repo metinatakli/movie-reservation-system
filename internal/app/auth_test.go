@@ -96,7 +96,7 @@ func TestRegisterUser(t *testing.T) {
 				Gender:    "INVALID",
 			},
 			wantStatus:     http.StatusUnprocessableEntity,
-			wantErrMessage: validator.ErrInvalidGender,
+			wantErrMessage: validator.ErrDefaultInvalid,
 		},
 		{
 			name: "duplicate email",
@@ -138,22 +138,13 @@ func TestRegisterUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := &application{
-				validator: validator.NewValidator(),
-				logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-				userRepo:  &mocks.MockUserRepo{CreateFunc: tt.userRepoFunc},
-				tokenRepo: &mocks.MockTokenRepo{CreateFunc: tt.tokenRepoFunc},
-				mailer:    &MockMailer{sendFunc: tt.mailerFunc},
-			}
+			app := newTestApplication(func(a *application) {
+				a.userRepo = &mocks.MockUserRepo{CreateFunc: tt.userRepoFunc}
+				a.tokenRepo = &mocks.MockTokenRepo{CreateFunc: tt.tokenRepoFunc}
+				a.mailer = &MockMailer{sendFunc: tt.mailerFunc}
+			})
 
-			jsonData, err := json.Marshal(tt.input)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			r := httptest.NewRequest(http.MethodPost, "/users", bytes.NewReader(jsonData))
-			r.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
+			w, r := executeRequest(t, http.MethodPost, "/users", tt.input)
 
 			app.RegisterUser(w, r)
 
@@ -161,9 +152,9 @@ func TestRegisterUser(t *testing.T) {
 				t.Errorf("RegisterUser() status = %v, want %v", got, tt.wantStatus)
 			}
 
-			var response api.RegisterResponse
 			if tt.wantStatus == http.StatusAccepted {
-				err = json.NewDecoder(w.Body).Decode(&response)
+				var response api.RegisterResponse
+				err := json.NewDecoder(w.Body).Decode(&response)
 				if err != nil {
 					t.Fatalf("Failed to decode response: %v", err)
 				}
@@ -177,30 +168,208 @@ func TestRegisterUser(t *testing.T) {
 				if response.Activated != false {
 					t.Errorf("Expected Activated=false, got %v", response.Activated)
 				}
-			} else if tt.wantStatus == http.StatusUnprocessableEntity {
-				var validationResp api.ValidationErrorResponse
-				if err := json.NewDecoder(w.Body).Decode(&validationResp); err != nil {
-					t.Fatalf("Failed to decode validation error response: %v", err)
-				}
-
-				errorSet := make(map[string]bool)
-				for _, vErr := range validationResp.ValidationErrors {
-					errorSet[vErr.Issue] = true
-				}
-
-				if !errorSet[tt.wantErrMessage] {
-					t.Errorf("Expected validation error message '%s' not found in response", tt.wantErrMessage)
-				}
-			} else {
-				var errorResp api.ErrorResponse
-				if err := json.NewDecoder(w.Body).Decode(&errorResp); err != nil {
-					t.Fatalf("Failed to decode error response: %v", err)
-				}
-
-				if errorResp.Message != tt.wantErrMessage {
-					t.Errorf("Error message = %v, want %v", errorResp.Message, tt.wantErrMessage)
-				}
 			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
 		})
 	}
+}
+
+func TestActivateUser(t *testing.T) {
+	tests := []struct {
+		name               string
+		input              api.UserActivationRequest
+		getUserByTokenFunc func(context.Context, []byte, string) (*domain.User, error)
+		updateUserFunc     func(context.Context, *domain.User) error
+		deleteTokenFunc    func(context.Context, string, int) error
+		wantStatus         int
+		wantErrMessage     string
+	}{
+		{
+			name: "successful activation",
+			input: api.UserActivationRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1, Activated: false}, nil
+			},
+			updateUserFunc: func(ctx context.Context, u *domain.User) error {
+				return nil
+			},
+			deleteTokenFunc: func(ctx context.Context, scope string, userID int) error {
+				return nil
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "invalid token",
+			input: api.UserActivationRequest{
+				Token: "invalid-token",
+			},
+			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return nil, domain.ErrRecordNotFound
+			},
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantErrMessage: validator.ErrDefaultInvalid,
+		},
+		{
+			name: "already activated user",
+			input: api.UserActivationRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1, Activated: true}, nil
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrMessage: ErrEditConflict,
+		},
+		{
+			name: "update conflict",
+			input: api.UserActivationRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1, Activated: false}, nil
+			},
+			updateUserFunc: func(ctx context.Context, u *domain.User) error {
+				return domain.ErrEditConflict
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrMessage: ErrEditConflict,
+		},
+		{
+			name: "token deletion failure",
+			input: api.UserActivationRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1, Activated: false}, nil
+			},
+			updateUserFunc: func(ctx context.Context, u *domain.User) error {
+				return nil
+			},
+			deleteTokenFunc: func(ctx context.Context, scope string, userID int) error {
+				return fmt.Errorf("failed to delete token")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApplication(func(a *application) {
+				a.userRepo = &mocks.MockUserRepo{
+					GetByTokenFunc: tt.getUserByTokenFunc,
+					UpdateFunc:     tt.updateUserFunc,
+				}
+				a.tokenRepo = &mocks.MockTokenRepo{
+					DeleteAllForUserFunc: tt.deleteTokenFunc,
+				}
+			})
+
+			w, r := executeRequest(t, http.MethodPut, "/users/activation", tt.input)
+
+			app.ActivateUser(w, r)
+
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("ActivateUser() status = %v, want %v", got, tt.wantStatus)
+			}
+
+			if tt.wantStatus == http.StatusOK {
+				var response api.UserActivationResponse
+				err := json.NewDecoder(w.Body).Decode(&response)
+				if err != nil {
+					t.Fatalf("Failed to decode response: %v", err)
+				}
+
+				if !response.Activated {
+					t.Error("Expected Activated=true in response")
+				}
+			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func executeRequest(t *testing.T, method, url string, body any) (*httptest.ResponseRecorder, *http.Request) {
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(method, url, bytes.NewReader(jsonData))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	return w, r
+}
+
+func checkErrorResponse(t *testing.T, w *httptest.ResponseRecorder, tt struct {
+	wantStatus     int
+	wantErrMessage string
+}) {
+	if got := w.Code; got != tt.wantStatus {
+		t.Errorf("status = %v, want %v", got, tt.wantStatus)
+	}
+
+	if tt.wantStatus >= 200 && tt.wantStatus < 300 {
+		return
+	}
+
+	switch tt.wantStatus {
+	case http.StatusUnprocessableEntity:
+		var validationResp api.ValidationErrorResponse
+		if err := json.NewDecoder(w.Body).Decode(&validationResp); err != nil {
+			t.Fatalf("Failed to decode validation error response: %v", err)
+		}
+
+		errorSet := make(map[string]bool)
+		for _, vErr := range validationResp.ValidationErrors {
+			errorSet[vErr.Issue] = true
+		}
+
+		if !errorSet[tt.wantErrMessage] {
+			t.Errorf("Expected validation error message '%s' not found in response", tt.wantErrMessage)
+		}
+
+	default:
+		var errorResp api.ErrorResponse
+		if err := json.NewDecoder(w.Body).Decode(&errorResp); err != nil {
+			t.Fatalf("Failed to decode error response: %v", err)
+		}
+
+		if tt.wantErrMessage != "" && errorResp.Message != tt.wantErrMessage {
+			t.Errorf("Error message = %v, want %v", errorResp.Message, tt.wantErrMessage)
+		}
+	}
+}
+
+func newTestApplication(opts ...func(*application)) *application {
+	app := &application{
+		validator: validator.NewValidator(),
+		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		userRepo:  &mocks.MockUserRepo{},
+		tokenRepo: &mocks.MockTokenRepo{},
+		mailer:    &MockMailer{},
+	}
+
+	for _, opt := range opts {
+		opt(app)
+	}
+
+	return app
 }

@@ -8,10 +8,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var (
-	ErrUserAlreadyExists = errors.New("User already exists with email: %s")
-)
-
 type Gender string
 
 const (
@@ -68,4 +64,6 @@ func (p *password) Matches(plaintext string) (bool, error) {
 
 type UserRepository interface {
 	Create(context.Context, *User) error
+	GetByToken(ctx context.Context, tokenHash []byte, tokenScope string) (*User, error)
+	Update(context.Context, *User) error
 }

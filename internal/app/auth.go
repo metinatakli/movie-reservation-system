@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -99,5 +100,67 @@ func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
+	}
+}
+
+func (app *application) ActivateUser(w http.ResponseWriter, r *http.Request) {
+	var input api.UserActivationRequest
+
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	err = app.validator.Struct(input)
+	if err != nil {
+		app.failedValidationResponse(w, r, err)
+		return
+	}
+
+	hash := sha256.Sum256([]byte(input.Token))
+	user, err := app.userRepo.GetByToken(r.Context(), hash[:], domain.UserActivationScope)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	if user.Activated {
+		app.logger.Error(fmt.Sprintf("user with id %d is already activated", user.ID))
+		app.editConflictResponse(w, r)
+		return
+	}
+
+	user.Activated = true
+
+	err = app.userRepo.Update(r.Context(), user)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	err = app.tokenRepo.DeleteAllForUser(r.Context(), domain.UserActivationScope, user.ID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	resp := api.UserActivationResponse{Activated: true}
+
+	err = app.writeJSON(w, http.StatusOK, resp, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
 	}
 }

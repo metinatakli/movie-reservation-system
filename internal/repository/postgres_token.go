@@ -22,9 +22,15 @@ func (p *PostgresTokenRepository) Create(ctx context.Context, token *domain.Toke
 			VALUES($1, $2, $3, $4)`
 
 	_, err := p.db.Exec(ctx, query, token.Hash, token.UserId, token.Expiry, token.Scope)
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
+}
+
+func (p *PostgresTokenRepository) DeleteAllForUser(ctx context.Context, tokenScope string, userID int) error {
+	query := `DELETE FROM tokens
+			WHERE scope = $1 AND user_id = $2`
+
+	_, err := p.db.Exec(ctx, query, tokenScope, userID)
+
+	return err
 }

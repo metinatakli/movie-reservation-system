@@ -8,9 +8,19 @@ import (
 
 type MockUserRepo struct {
 	domain.UserRepository
-	CreateFunc func(ctx context.Context, user *domain.User) error
+	CreateFunc     func(ctx context.Context, user *domain.User) error
+	GetByTokenFunc func(ctx context.Context, hash []byte, scope string) (*domain.User, error)
+	UpdateFunc     func(ctx context.Context, user *domain.User) error
 }
 
 func (m *MockUserRepo) Create(ctx context.Context, user *domain.User) error {
 	return m.CreateFunc(ctx, user)
+}
+
+func (m *MockUserRepo) GetByToken(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+	return m.GetByTokenFunc(ctx, hash, scope)
+}
+
+func (m *MockUserRepo) Update(ctx context.Context, user *domain.User) error {
+	return m.UpdateFunc(ctx, user)
 }

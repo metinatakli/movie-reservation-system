@@ -45,4 +45,5 @@ func GenerateToken(userId int64, ttl time.Duration, scope string) (*Token, error
 
 type TokenRepository interface {
 	Create(context.Context, *Token) error
+	DeleteAllForUser(ctx context.Context, tokenScope string, userID int) error
 }

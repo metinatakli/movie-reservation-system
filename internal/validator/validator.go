@@ -24,7 +24,7 @@ const (
 	ErrMaxLength       = "must be at most %s characters long"
 	ErrOnlyLetters     = "must contain only letters"
 	ErrAgeCheck        = "must be at least 15 years old"
-	ErrInvalidGender   = "is invalid"
+	ErrDefaultInvalid  = "is invalid"
 	ErrInvalidPassword = "must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, " +
 		"one number, and one special character (!@#$%^&*)."
 )
@@ -103,6 +103,6 @@ func ValidationMessage(err validator.FieldError) string {
 	case "password":
 		return ErrInvalidPassword
 	default:
-		return ErrInvalidGender
+		return ErrDefaultInvalid
 	}
 }
