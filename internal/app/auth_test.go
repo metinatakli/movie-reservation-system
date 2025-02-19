@@ -12,11 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
 	"github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/oapi-codegen/runtime/types"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type MockMailer struct {
@@ -291,6 +293,142 @@ func TestActivateUser(t *testing.T) {
 
 				if !response.Activated {
 					t.Error("Expected Activated=true in response")
+				}
+			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func TestLogin(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          api.LoginRequest
+		getByEmailFunc func(context.Context, string) (*domain.User, error)
+		password       string
+		wantStatus     int
+		wantErrMessage string
+	}{
+		{
+			name: "successful login",
+			input: api.LoginRequest{
+				Email:    "freddie@example.com",
+				Password: "Pass123!@#",
+			},
+			password: "Pass123!@#",
+			getByEmailFunc: func(ctx context.Context, email string) (*domain.User, error) {
+				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Pass123!@#"), 12)
+				user := &domain.User{}
+
+				user.ID = 1
+				user.Password.Hash = hashedPassword
+
+				return user, nil
+			},
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name: "invalid password format",
+			input: api.LoginRequest{
+				Email:    "freddie@example.com",
+				Password: "weak",
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrInvalidCredentials,
+		},
+		{
+			name: "user not found",
+			input: api.LoginRequest{
+				Email:    "nonexistent@example.com",
+				Password: "Pass123!@#",
+			},
+			getByEmailFunc: func(ctx context.Context, email string) (*domain.User, error) {
+				return nil, domain.ErrRecordNotFound
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrInvalidCredentials,
+		},
+		{
+			name: "incorrect password",
+			input: api.LoginRequest{
+				Email:    "freddie@example.com",
+				Password: "WrongPass123!@#",
+			},
+			password: "Pass123!@#",
+			getByEmailFunc: func(ctx context.Context, email string) (*domain.User, error) {
+				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Pass12!@#"), 12)
+				user := &domain.User{}
+
+				user.ID = 1
+				user.Password.Hash = hashedPassword
+
+				return user, nil
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrInvalidCredentials,
+		},
+		{
+			name: "database error",
+			input: api.LoginRequest{
+				Email:    "freddie@example.com",
+				Password: "Pass123!@#",
+			},
+			getByEmailFunc: func(ctx context.Context, email string) (*domain.User, error) {
+				return nil, fmt.Errorf("database connection error")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApplication(func(a *application) {
+				a.userRepo = &mocks.MockUserRepo{
+					GetByEmailFunc: tt.getByEmailFunc,
+				}
+				a.sessionManager = scs.New()
+			})
+
+			w, r := executeRequest(t, http.MethodPost, "/sessions", tt.input)
+
+			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.Login))
+			handler.ServeHTTP(w, r)
+
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("Login() status = %v, want %v", got, tt.wantStatus)
+			}
+
+			if tt.wantStatus == http.StatusNoContent {
+				var sessionCookie *http.Cookie
+				for _, cookie := range w.Result().Cookies() {
+					if cookie.Name == app.sessionManager.Cookie.Name {
+						sessionCookie = cookie
+						break
+					}
+				}
+
+				if sessionCookie == nil {
+					t.Fatal("No session cookie found in response")
+					return
+				}
+
+				ctx, err := app.sessionManager.Load(r.Context(), sessionCookie.Value)
+				if err != nil {
+					t.Fatalf("Failed to load session: %v", err)
+				}
+
+				userId := app.sessionManager.GetInt(ctx, SessionKeyUserId)
+
+				if userId != 1 {
+					t.Errorf("Expected userId=1 in session, got %v", userId)
 				}
 			}
 

@@ -245,6 +245,7 @@ func (app *application) routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
 	r.Use(app.recoverPanic)
+	r.Use(app.sessionManager.LoadAndSave)
 
 	return api.HandlerFromMux(app, r)
 }

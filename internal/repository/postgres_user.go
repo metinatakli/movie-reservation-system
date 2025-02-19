@@ -120,3 +120,22 @@ func (p *PostgesUserRepository) Update(ctx context.Context, user *domain.User) e
 
 	return nil
 }
+
+func (p *PostgesUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
+	query := `SELECT id, password_hash 
+		FROM users
+		WHERE email = $1 AND activated = true AND is_active = true`
+
+	user := &domain.User{}
+
+	err := p.db.QueryRow(ctx, query, email).Scan(&user.ID, &user.Password.Hash)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrRecordNotFound
+		}
+
+		return nil, err
+	}
+
+	return user, nil
+}

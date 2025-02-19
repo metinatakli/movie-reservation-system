@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	ErrInternalServer = "The server encountered a problem and could not process your request"
-	ErrNotFound       = "The requested resource not found"
-	ErrEditConflict   = "Unable to update the record due to an edit conflict, please try again"
+	ErrInternalServer     = "The server encountered a problem and could not process your request"
+	ErrNotFound           = "The requested resource not found"
+	ErrEditConflict       = "Unable to update the record due to an edit conflict, please try again"
+	ErrInvalidCredentials = "Invalid email or password"
 )
 
 func (app *application) logError(r *http.Request, err error) {
@@ -81,4 +82,8 @@ func (app *application) failedValidationResponse(w http.ResponseWriter, r *http.
 
 func (app *application) editConflictResponse(w http.ResponseWriter, r *http.Request) {
 	app.errorResponse(w, r, http.StatusConflict, ErrEditConflict)
+}
+
+func (app *application) invalidCredentialsResponse(w http.ResponseWriter, r *http.Request) {
+	app.errorResponse(w, r, http.StatusUnauthorized, ErrInvalidCredentials)
 }

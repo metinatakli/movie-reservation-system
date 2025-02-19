@@ -115,6 +115,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /sessions:
+    post:
+      tags:
+       - auth
+      summary: User login
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '204':
+          description: User is successfully logged in
+        '400':
+          description: Invalid request body syntax
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -297,3 +336,19 @@ components:
         activated:
           type: boolean
           description: "Indicates whether the user's account is successfully activated."
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          description: "The user's email address. Must be a valid email format and cannot exceed 254 characters in length."
+          x-oapi-codegen-extra-tags:
+            validate: "required,email,max=254"
+        password:
+          type: string
+          description: "The user's password. Must comply with password requirements."
+          x-oapi-codegen-extra-tags:
+            validate: "required,password"

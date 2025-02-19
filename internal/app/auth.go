@@ -10,6 +10,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/oapi-codegen/runtime/types"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
@@ -163,4 +164,42 @@ func (app *application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
+}
+
+func (app *application) Login(w http.ResponseWriter, r *http.Request) {
+	var input api.LoginRequest
+
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	err = app.validator.Struct(input)
+	if err != nil {
+		app.invalidCredentialsResponse(w, r)
+		return
+	}
+
+	user, err := app.userRepo.GetByEmail(r.Context(), input.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRecordNotFound):
+			app.invalidCredentialsResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	err = bcrypt.CompareHashAndPassword(user.Password.Hash, []byte(input.Password))
+	if err != nil {
+		app.invalidCredentialsResponse(w, r)
+		return
+	}
+
+	app.sessionManager.Put(r.Context(), SessionKeyUserId, user.ID)
+
+	w.WriteHeader(http.StatusNoContent)
 }
