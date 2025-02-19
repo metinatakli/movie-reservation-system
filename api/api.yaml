@@ -9,6 +9,11 @@ tags:
     description: Related to server's health
   - name: auth
     description: Related to user authentication and registration
+  - name: user
+    description: >
+      Operations related to user management, including viewing and updating
+      user profiles, managing user settings, and handling user-specific
+      actions.
 paths:
   /healthcheck:
     get:
@@ -47,7 +52,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegisterResponse'
+                $ref: '#/components/schemas/UserResponse'
         '400':
           description: Invalid request body syntax
           content:
@@ -174,6 +179,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /users/me:
+    get:
+      tags:
+       - user
+      summary: Retrieve user profile
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+               $ref: '#/components/schemas/UserResponse'
+        '404':
+          description: Guest user tries to reach user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -288,7 +318,7 @@ components:
             - $ref: "#/components/schemas/Gender"
           x-oapi-codegen-extra-tags:
             validate: "required,gender"
-    RegisterResponse:
+    UserResponse:
       type: object
       required:
         - id

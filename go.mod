@@ -10,6 +10,7 @@ require (
 	github.com/go-mail/mail/v2 v2.3.0
 	github.com/go-playground/validator/v10 v10.24.0
 	github.com/gomodule/redigo v1.9.2
+	github.com/google/go-cmp v0.6.0
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/oapi-codegen/oapi-codegen/v2 v2.4.1

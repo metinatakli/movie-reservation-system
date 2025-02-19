@@ -139,3 +139,32 @@ func (p *PostgesUserRepository) GetByEmail(ctx context.Context, email string) (*
 
 	return user, nil
 }
+
+func (p *PostgesUserRepository) GetById(ctx context.Context, id int) (*domain.User, error) {
+	query := `SELECT id, first_name, last_name, birth_date, gender, email, activated, version, created_at
+		FROM users
+		WHERE id = $1 AND activated = true AND is_active = true`
+
+	user := &domain.User{}
+
+	err := p.db.QueryRow(ctx, query, id).Scan(
+		&user.ID,
+		&user.FirstName,
+		&user.LastName,
+		&user.BirthDate,
+		&user.Gender,
+		&user.Email,
+		&user.Activated,
+		&user.Version,
+		&user.CreatedAt)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrRecordNotFound
+		}
+
+		return nil, err
+	}
+
+	return user, nil
+}

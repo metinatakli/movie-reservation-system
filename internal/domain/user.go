@@ -66,5 +66,6 @@ type UserRepository interface {
 	Create(context.Context, *User) error
 	GetByToken(ctx context.Context, tokenHash []byte, tokenScope string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetById(ctx context.Context, id int) (*User, error)
 	Update(context.Context, *User) error
 }

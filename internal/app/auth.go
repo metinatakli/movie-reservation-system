@@ -86,7 +86,7 @@ func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	resp := api.RegisterResponse{
+	resp := api.UserResponse{
 		Id:        user.ID,
 		FirstName: user.FirstName,
 		LastName:  user.LastName,
