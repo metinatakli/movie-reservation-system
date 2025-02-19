@@ -203,3 +203,15 @@ func (app *application) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (app *application) Logout(w http.ResponseWriter, r *http.Request) {
+	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+	if userId == 0 {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	app.sessionManager.Destroy(r.Context())
+
+	w.WriteHeader(http.StatusNoContent)
+}

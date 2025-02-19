@@ -443,6 +443,74 @@ func TestLogin(t *testing.T) {
 	}
 }
 
+func TestLogout(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupSession   bool
+		wantStatus     int
+		wantErrMessage string
+	}{
+		{
+			name:         "successful logout",
+			setupSession: true,
+			wantStatus:   http.StatusNoContent,
+		},
+		{
+			name:           "no active session",
+			setupSession:   false,
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApplication(func(a *application) {
+				a.sessionManager = scs.New()
+			})
+
+			w, r := executeRequest(t, http.MethodDelete, "/sessions", nil)
+
+			if tt.setupSession {
+				r = setupTestSession(t, app, r, 1)
+			}
+
+			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.Logout))
+			handler.ServeHTTP(w, r)
+
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("Logout() status = %v, want %v", got, tt.wantStatus)
+			}
+
+			if tt.setupSession {
+				userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+				if userId != 0 {
+					t.Error("Session was not destroyed")
+				}
+			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func setupTestSession(t *testing.T, app *application, r *http.Request, userId int) *http.Request {
+	ctx, err := app.sessionManager.Load(r.Context(), "session")
+	if err != nil {
+		t.Fatalf("Failed to load session: %v", err)
+	}
+
+	app.sessionManager.Put(ctx, SessionKeyUserId, userId)
+
+	return r.WithContext(ctx)
+}
+
 func executeRequest(t *testing.T, method, url string, body any) (*httptest.ResponseRecorder, *http.Request) {
 	jsonData, err := json.Marshal(body)
 	if err != nil {
