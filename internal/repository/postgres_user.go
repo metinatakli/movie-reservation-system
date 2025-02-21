@@ -134,7 +134,7 @@ func (p *PostgesUserRepository) GetByEmail(ctx context.Context, email string) (*
 }
 
 func (p *PostgesUserRepository) GetById(ctx context.Context, id int) (*domain.User, error) {
-	query := `SELECT id, first_name, last_name, birth_date, gender, email, activated, version, created_at
+	query := `SELECT id, first_name, last_name, birth_date, gender, email, password_hash, activated, version, created_at
 		FROM users
 		WHERE id = $1 AND activated = true AND is_active = true`
 
@@ -147,6 +147,7 @@ func (p *PostgesUserRepository) GetById(ctx context.Context, id int) (*domain.Us
 		&user.BirthDate,
 		&user.Gender,
 		&user.Email,
+		&user.Password.Hash,
 		&user.Activated,
 		&user.Version,
 		&user.CreatedAt)

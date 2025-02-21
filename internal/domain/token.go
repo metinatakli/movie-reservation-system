@@ -10,6 +10,7 @@ import (
 
 const (
 	UserActivationScope string = "user_activation"
+	UserDeletionScope   string = "user_deletion"
 	tokenLength         int    = 32
 )
 

@@ -251,6 +251,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /users/me/deletion-request:
+    post:
+      tags:
+        - user
+      summary: Initiates the user deletion flow
+      operationId: initiateUserDeletion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateUserDeletionRequest'
+      responses:
+        '202':
+          description: Email is sent to user for user deletion
+        '400':
+          description: Invalid request body syntax
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Guest user tries to reach to the endpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -474,3 +512,13 @@ components:
             - $ref: "#/components/schemas/Gender"
           x-oapi-codegen-extra-tags:
             validate: "omitempty,gender"
+    InitiateUserDeletionRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          description: "The user's password. Must be at least 8 characters long and at most 25 characters long. It must contain only alphanumeric characters and special symbols (e.g., !@#$%^&*)."
+          x-oapi-codegen-extra-tags:
+            validate: "required,password"

@@ -1,0 +1,43 @@
+{{define "subject"}}User Deletion Confirmation{{end}}
+
+{{define "plainBody"}}
+Hi,
+
+We received a request to delete your CineX account (User ID: {{.userID}}).
+
+To confirm and proceed with the deletion, please send a request to the `PUT /users/me/deletion-request` endpoint with the following JSON body:
+
+{"token": "{{.deletionToken}}"}
+
+This token is valid for 30 minutes and can only be used once.
+
+If you did not request this, please ignore this message, and no action will be taken.
+
+Thanks,  
+The CineX Team
+{{end}}
+
+{{define "htmlBody"}}
+<!doctype html>
+<html>
+
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+</head>
+
+<body>
+    <p>Hi,</p>
+    <p>We received a request to delete your CineX account (User ID: {{.userID}}).</p>
+    <p>To confirm and proceed with the deletion, please send a request to the `PUT /users/me/deletion-request` endpoint with the following JSON body:</p>
+    <pre><code>
+    {"token": "{{.deletionToken}}"}
+    </code></pre>
+    <p>This token is valid for 30 minutes and can only be used once.</p>
+    <p>If you did not request this, please ignore this message, and no action will be taken.</p>
+    <p>Thanks,</p>
+    <p>The CineX Team</p>
+</body>
+
+</html>
+{{end}}
