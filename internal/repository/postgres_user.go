@@ -79,16 +79,14 @@ func (p *PostgesUserRepository) GetByToken(ctx context.Context, tokenHash []byte
 }
 
 func (p *PostgesUserRepository) Update(ctx context.Context, user *domain.User) error {
-	// TODO: When adding update user endpoint, change domain.User fields to ptr
 	query := `
 		UPDATE users
 		SET first_name    = COALESCE($3, first_name),
 			last_name     = COALESCE($4, last_name),
-			email         = COALESCE($5, email),
-			password_hash = COALESCE($6, password_hash),
-			birth_date    = COALESCE($7, birth_date),
-			gender        = COALESCE($8, gender),
-			activated     = COALESCE($9, activated),
+			password_hash = COALESCE($5, password_hash),
+			birth_date    = COALESCE($6, birth_date),
+			gender        = COALESCE($7, gender),
+			activated     = COALESCE($8, activated),
 			updated_at    = NOW(),
 			version       = version + 1
 		WHERE id = $1 AND version = $2
@@ -98,7 +96,6 @@ func (p *PostgesUserRepository) Update(ctx context.Context, user *domain.User) e
 		user.Version,
 		user.FirstName,
 		user.LastName,
-		user.Email,
 		user.Password.Hash,
 		user.BirthDate,
 		user.Gender,
@@ -106,16 +103,12 @@ func (p *PostgesUserRepository) Update(ctx context.Context, user *domain.User) e
 
 	err := p.db.QueryRow(ctx, query, args...).Scan(&user.Version)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
 			return domain.ErrEditConflict
+		default:
+			return err
 		}
-
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return domain.ErrUserAlreadyExists
-		}
-
-		return err
 	}
 
 	return nil

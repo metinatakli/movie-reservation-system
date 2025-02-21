@@ -204,6 +204,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - user
+      summary: Update user profile
+      operationId: updateUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+               $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request body syntax
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Edit conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '404':
+          description: Guest user tries to reach to the endpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -402,3 +449,28 @@ components:
           description: "The user's password. Must comply with password requirements."
           x-oapi-codegen-extra-tags:
             validate: "required,password"
+    UpdateUserRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          description: "The user's first name. Must contain only alphabetic characters and be between 2 and 50 characters in length."
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=2,max=50,alpha"
+        lastName:
+          type: string
+          description: "The user's last name. Must contain only alphabetic characters and be between 2 and 50 characters in length."
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=2,max=50,alpha"
+        birthDate:
+          type: string
+          format: date
+          description: "The user's date of birth. Must be provided in ISO 8601 format (YYYY-MM-DD). The user must be at least 15 years old."
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,age_check"
+        gender:
+          # https://github.com/oapi-codegen/oapi-codegen/issues/863
+          allOf:
+            - $ref: "#/components/schemas/Gender"
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,gender"

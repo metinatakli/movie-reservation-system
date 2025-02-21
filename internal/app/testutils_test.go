@@ -93,3 +93,7 @@ func checkErrorResponse(t *testing.T, w *httptest.ResponseRecorder, tt struct {
 		}
 	}
 }
+
+func ptr[T any](v T) *T {
+	return &v
+}
