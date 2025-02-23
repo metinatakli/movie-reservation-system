@@ -15,6 +15,8 @@ const (
 	ErrNotFound           = "The requested resource not found"
 	ErrEditConflict       = "Unable to update the record due to an edit conflict, please try again"
 	ErrInvalidCredentials = "Invalid email or password"
+	ErrUnauthorizedAccess = "You must be authenticated to access this resource"
+	ErrForbiddenAccess    = "You do not have permission to perform this action"
 )
 
 func (app *application) logError(r *http.Request, err error) {
@@ -86,4 +88,12 @@ func (app *application) editConflictResponse(w http.ResponseWriter, r *http.Requ
 
 func (app *application) invalidCredentialsResponse(w http.ResponseWriter, r *http.Request) {
 	app.errorResponse(w, r, http.StatusUnauthorized, ErrInvalidCredentials)
+}
+
+func (app *application) unauthorizedAccessResponse(w http.ResponseWriter, r *http.Request) {
+	app.errorResponse(w, r, http.StatusUnauthorized, ErrUnauthorizedAccess)
+}
+
+func (app *application) forbiddenResponse(w http.ResponseWriter, r *http.Request) {
+	app.errorResponse(w, r, http.StatusForbidden, ErrForbiddenAccess)
 }

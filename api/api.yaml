@@ -289,6 +289,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - user
+      summary: Completes the user deletion flow
+      operationId: completeUserDeletion
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUserDeletionRequest'
+      responses:
+        '204':
+          description: User is deleted successfully
+        '400':
+          description: Invalid request body syntax
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: User does not have permission to perform this action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Token sent by user doesn't exist or has expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Edit conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid request fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -522,3 +577,13 @@ components:
           description: "The user's password. Must be at least 8 characters long and at most 25 characters long. It must contain only alphanumeric characters and special symbols (e.g., !@#$%^&*)."
           x-oapi-codegen-extra-tags:
             validate: "required,password"
+    CompleteUserDeletionRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: "Token sent to users' email in order to activate their account"
+          x-oapi-codegen-extra-tags:
+            validate: "required,len=43,base64rawurl"

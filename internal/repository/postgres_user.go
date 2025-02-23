@@ -48,8 +48,15 @@ func (p *PostgesUserRepository) Create(ctx context.Context, user *domain.User) e
 	return nil
 }
 
-func (p *PostgesUserRepository) GetByToken(ctx context.Context, tokenHash []byte, tokenScope string) (*domain.User, error) {
-	query := `SELECT u.id, u.first_name, u.last_name, u.birth_date, u.gender, u.email, u.password_hash, u.activated, u.version
+func (p *PostgesUserRepository) GetByToken(
+	ctx context.Context,
+	tokenHash []byte,
+	tokenScope string,
+) (*domain.User, error) {
+	query := `
+		SELECT 
+			u.id, u.first_name, u.last_name, u.birth_date,
+			u.gender, u.email, u.password_hash, u.activated, u.version
 		FROM users u
 		INNER JOIN tokens t ON u.id = t.user_id
 		WHERE t.hash = $1 AND t.scope = $2 AND t.expiry > $3`
@@ -161,4 +168,21 @@ func (p *PostgesUserRepository) GetById(ctx context.Context, id int) (*domain.Us
 	}
 
 	return user, nil
+}
+
+func (p *PostgesUserRepository) Delete(ctx context.Context, user *domain.User) error {
+	query := `UPDATE users 
+			SET is_active = false
+			WHERE id = $1 AND version = $2`
+
+	cmd, err := p.db.Exec(ctx, query, user.ID, user.Version)
+	if err != nil {
+		return err
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return domain.ErrEditConflict
+	}
+
+	return nil
 }

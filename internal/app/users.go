@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -196,4 +197,72 @@ func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (app *application) CompleteUserDeletion(w http.ResponseWriter, r *http.Request) {
+	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+	if userId == 0 {
+		app.unauthorizedAccessResponse(w, r)
+		return
+	}
+
+	var input api.CompleteUserDeletionRequest
+
+	err := app.readJSON(w, r, &input)
+	if err != nil {
+		app.badRequestResponse(w, r, err)
+		return
+	}
+
+	err = app.validator.Struct(input)
+	if err != nil {
+		app.failedValidationResponse(w, r, err)
+		return
+	}
+
+	hash := sha256.Sum256([]byte(input.Token))
+	user, err := app.userRepo.GetByToken(r.Context(), hash[:], domain.UserDeletionScope)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	if user.ID != userId {
+		app.logger.Error("unauthorized user deletion attempt",
+			"attemptingUserId", userId,
+			"targetUserId", user.ID)
+
+		app.forbiddenResponse(w, r)
+
+		return
+	}
+
+	err = app.userRepo.Delete(r.Context(), user)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrEditConflict):
+			app.editConflictResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	err = app.tokenRepo.DeleteAllForUser(r.Context(), domain.UserDeletionScope, userId)
+	if err != nil {
+		app.logger.Warn("failed to delete tokens for user while completing user deletion",
+			"error", err,
+			"userId", userId)
+	}
+
+	app.sessionManager.Destroy(r.Context())
+
+	w.WriteHeader(http.StatusNoContent)
 }
