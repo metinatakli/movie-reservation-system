@@ -130,7 +130,7 @@ func (app *application) UpdateUser(w http.ResponseWriter, r *http.Request) {
 func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Request) {
 	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
 	if userId == 0 {
-		app.notFoundResponse(w, r)
+		app.unauthorizedAccessResponse(w, r)
 		return
 	}
 

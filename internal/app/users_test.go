@@ -15,6 +15,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
 	"github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/oapi-codegen/runtime/types"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestGetUsersMe(t *testing.T) {
@@ -294,6 +295,142 @@ func TestUpdateUser(t *testing.T) {
 					t.Errorf("Mismatch (-want +got):\n%s", diff)
 				}
 			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func TestInitiateUserDeletion(t *testing.T) {
+	tests := []struct {
+		name            string
+		setupSession    bool
+		userId          int
+		input           api.InitiateUserDeletionRequest
+		getByIdFunc     func(context.Context, int) (*domain.User, error)
+		createTokenFunc func(context.Context, *domain.Token) error
+		wantStatus      int
+		wantErrMessage  string
+	}{
+		{
+			name:         "successful deletion initiation",
+			setupSession: true,
+			userId:       1,
+			input: api.InitiateUserDeletionRequest{
+				Password: "Correct@Pass123",
+			},
+			getByIdFunc: func(ctx context.Context, id int) (*domain.User, error) {
+				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Correct@Pass123"), 12)
+
+				user := &domain.User{}
+				user.Password.Hash = hashedPassword
+				user.Email = "test@example.com"
+
+				return user, nil
+			},
+			createTokenFunc: func(ctx context.Context, token *domain.Token) error {
+				return nil
+			},
+			wantStatus: http.StatusAccepted,
+		},
+		{
+			name:           "no session",
+			setupSession:   false,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrUnauthorizedAccess,
+		},
+		{
+			name:         "invalid password format",
+			setupSession: true,
+			userId:       1,
+			input: api.InitiateUserDeletionRequest{
+				Password: "weak",
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrInvalidCredentials,
+		},
+		{
+			name:         "user not found",
+			setupSession: true,
+			userId:       1,
+			input: api.InitiateUserDeletionRequest{
+				Password: "Password123!",
+			},
+			getByIdFunc: func(ctx context.Context, id int) (*domain.User, error) {
+				return nil, domain.ErrRecordNotFound
+			},
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+		{
+			name:         "incorrect password",
+			setupSession: true,
+			userId:       1,
+			input: api.InitiateUserDeletionRequest{
+				Password: "Wrong@Pass123",
+			},
+			getByIdFunc: func(ctx context.Context, id int) (*domain.User, error) {
+				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Correct@Pass123"), 12)
+
+				user := &domain.User{}
+				user.Password.Hash = hashedPassword
+				user.Email = "test@example.com"
+
+				return user, nil
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrInvalidCredentials,
+		},
+		{
+			name:         "token creation error",
+			setupSession: true,
+			userId:       1,
+			input: api.InitiateUserDeletionRequest{
+				Password: "Correct@Pass123",
+			},
+			getByIdFunc: func(ctx context.Context, id int) (*domain.User, error) {
+				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Correct@Pass123"), 12)
+
+				user := &domain.User{}
+				user.Password.Hash = hashedPassword
+				user.Email = "test@example.com"
+
+				return user, nil
+			},
+			createTokenFunc: func(ctx context.Context, token *domain.Token) error {
+				return fmt.Errorf("token creation error")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApplication(func(a *application) {
+				a.userRepo = &mocks.MockUserRepo{
+					GetByIdFunc: tt.getByIdFunc,
+				}
+				a.tokenRepo = &mocks.MockTokenRepo{
+					CreateFunc: tt.createTokenFunc,
+				}
+				a.sessionManager = scs.New()
+			})
+
+			w, r := executeRequest(t, http.MethodPost, "/users/me/deletion", tt.input)
+
+			if tt.setupSession {
+				r = setupTestSession(t, app, r, tt.userId)
+			}
+
+			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.InitiateUserDeletion))
+			handler.ServeHTTP(w, r)
 
 			checkErrorResponse(t, w, struct {
 				wantStatus     int
