@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     id bigserial PRIMARY KEY,
     first_name text NOT NULL,
     last_name text NOT NULL,
-    email citext UNIQUE NOT NULL,
+    email citext NOT NULL,
     password_hash bytea NOT NULL,
     birth_date date NOT NULL,
     gender gender_type NOT NULL,
@@ -16,3 +16,5 @@ CREATE TABLE IF NOT EXISTS users (
     is_active boolean NOT NULL DEFAULT TRUE,
     version integer NOT NULL DEFAULT 1
 );
+
+CREATE UNIQUE INDEX users_email_active_idx ON users (email) WHERE is_active = TRUE;
