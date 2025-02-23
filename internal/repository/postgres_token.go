@@ -19,7 +19,11 @@ func NewPostgresTokenRepository(db *pgxpool.Pool) *PostgresTokenRepository {
 
 func (p *PostgresTokenRepository) Create(ctx context.Context, token *domain.Token) error {
 	query := `INSERT INTO tokens (hash, user_id, expiry, scope)
-			VALUES($1, $2, $3, $4)`
+			VALUES($1, $2, $3, $4)
+			ON CONFLICT ON CONSTRAINT unique_user_scope DO 
+			UPDATE SET
+				hash = EXCLUDED.hash,  
+				expiry = EXCLUDED.expiry`
 
 	_, err := p.db.Exec(ctx, query, token.Hash, token.UserId, token.Expiry, token.Scope)
 

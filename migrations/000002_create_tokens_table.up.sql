@@ -4,3 +4,5 @@ CREATE TABLE IF NOT EXISTS tokens (
     expiry timestamp(0) with time zone NOT NULL,
     scope text NOT NULL
 );
+
+ALTER TABLE tokens ADD CONSTRAINT unique_user_scope UNIQUE (user_id, scope);
