@@ -104,6 +104,10 @@ func TestGetUsersMe(t *testing.T) {
 			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.GetCurrentUser))
 			handler.ServeHTTP(w, r)
 
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("status = %v, want %v", got, tt.wantStatus)
+			}
+
 			if tt.wantResponse != nil {
 				var response api.UserResponse
 				err := json.NewDecoder(w.Body).Decode(&response)
@@ -284,6 +288,10 @@ func TestUpdateUser(t *testing.T) {
 			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.UpdateUser))
 			handler.ServeHTTP(w, r)
 
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("status = %v, want %v", got, tt.wantStatus)
+			}
+
 			if tt.wantResponse != nil {
 				var response api.UserResponse
 				err := json.NewDecoder(w.Body).Decode(&response)
@@ -431,6 +439,173 @@ func TestInitiateUserDeletion(t *testing.T) {
 
 			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.InitiateUserDeletion))
 			handler.ServeHTTP(w, r)
+
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("status = %v, want %v", got, tt.wantStatus)
+			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func TestCompleteUserDeletion(t *testing.T) {
+	tests := []struct {
+		name               string
+		setupSession       bool
+		userId             int
+		input              api.CompleteUserDeletionRequest
+		getByTokenFunc     func(context.Context, []byte, string) (*domain.User, error)
+		deleteFunc         func(context.Context, *domain.User) error
+		deleteAllTokenFunc func(context.Context, string, int) error
+		wantStatus         int
+		wantErrMessage     string
+	}{
+		{
+			name:         "successful deletion",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1}, nil
+			},
+			deleteFunc: func(ctx context.Context, user *domain.User) error {
+				return nil
+			},
+			deleteAllTokenFunc: func(ctx context.Context, scope string, userId int) error {
+				return nil
+			},
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:           "no session",
+			setupSession:   false,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrUnauthorizedAccess,
+		},
+		{
+			name:         "invalid token format",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "invalid-token",
+			},
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantErrMessage: validator.ErrDefaultInvalid,
+		},
+		{
+			name:         "token not found",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "ZY4xzVx0_qm4XQlO5P6YyGvZz9kGvYyoUn8WF3mHAGQ",
+			},
+			getByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return nil, domain.ErrRecordNotFound
+			},
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+		{
+			name:         "unauthorized deletion attempt",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 2}, nil
+			},
+			wantStatus:     http.StatusForbidden,
+			wantErrMessage: ErrForbiddenAccess,
+		},
+		{
+			name:         "edit conflict during deletion",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1}, nil
+			},
+			deleteFunc: func(ctx context.Context, user *domain.User) error {
+				return domain.ErrEditConflict
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrMessage: ErrEditConflict,
+		},
+		{
+			name:         "database error during user deletion",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return &domain.User{ID: 1}, nil
+			},
+			deleteFunc: func(ctx context.Context, user *domain.User) error {
+				return fmt.Errorf("database error")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:         "database error during token lookup",
+			setupSession: true,
+			userId:       1,
+			input: api.CompleteUserDeletionRequest{
+				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
+			},
+			getByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
+				return nil, fmt.Errorf("database error")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApplication(func(a *application) {
+				a.userRepo = &mocks.MockUserRepo{
+					GetByTokenFunc: tt.getByTokenFunc,
+					DeleteFunc:     tt.deleteFunc,
+				}
+				a.tokenRepo = &mocks.MockTokenRepo{
+					DeleteAllForUserFunc: tt.deleteAllTokenFunc,
+				}
+				a.sessionManager = scs.New()
+			})
+
+			w, r := executeRequest(t, http.MethodPut, "/users/me/deletion-request", tt.input)
+
+			if tt.setupSession {
+				r = setupTestSession(t, app, r, tt.userId)
+			}
+
+			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.CompleteUserDeletion))
+			handler.ServeHTTP(w, r)
+
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("status = %v, want %v", got, tt.wantStatus)
+			}
+
+			if http.StatusNoContent == w.Code {
+				userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+				if userId != 0 {
+					t.Error("Session was not destroyed")
+				}
+			}
 
 			checkErrorResponse(t, w, struct {
 				wantStatus     int

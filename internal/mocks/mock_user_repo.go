@@ -13,6 +13,7 @@ type MockUserRepo struct {
 	UpdateFunc     func(ctx context.Context, user *domain.User) error
 	GetByEmailFunc func(ctx context.Context, email string) (*domain.User, error)
 	GetByIdFunc    func(ctx context.Context, id int) (*domain.User, error)
+	DeleteFunc     func(ctx context.Context, user *domain.User) error
 }
 
 func (m *MockUserRepo) Create(ctx context.Context, user *domain.User) error {
@@ -33,4 +34,8 @@ func (m *MockUserRepo) GetByEmail(ctx context.Context, email string) (*domain.Us
 
 func (m *MockUserRepo) GetById(ctx context.Context, id int) (*domain.User, error) {
 	return m.GetByIdFunc(ctx, id)
+}
+
+func (m *MockUserRepo) Delete(ctx context.Context, user *domain.User) error {
+	return m.DeleteFunc(ctx, user)
 }

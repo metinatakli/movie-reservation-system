@@ -58,10 +58,6 @@ func checkErrorResponse(t *testing.T, w *httptest.ResponseRecorder, tt struct {
 	wantStatus     int
 	wantErrMessage string
 }) {
-	if got := w.Code; got != tt.wantStatus {
-		t.Errorf("status = %v, want %v", got, tt.wantStatus)
-	}
-
 	if tt.wantStatus >= 200 && tt.wantStatus < 300 {
 		return
 	}
