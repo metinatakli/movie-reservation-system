@@ -32,6 +32,34 @@ db/migrations/up: confirm
 	@echo 'Running up migrations...'
 	migrate -path ./migrations -database ${DB_DSN} up
 
+## db/migrations/down: rollback last migration
+.PHONY: db/migrations/down
+db/migrations/down: confirm
+	@echo 'Rolling back last migration...'
+	migrate -path ./migrations -database ${DB_DSN} down 1
+
+## db/migrations/reset: rollback all migrations and reapply them
+.PHONY: db/migrations/reset
+db/migrations/reset: confirm
+	@echo 'Resetting database...'
+	migrate -path ./migrations -database ${DB_DSN} down
+	migrate -path ./migrations -database ${DB_DSN} up
+
+## db/seed file=<mock_file.sql>: Load specific mock data file
+.PHONY: db/seed
+db/seed:
+	@echo 'Seeding database with $(file)...'
+ifeq ($(ENV), development)
+	docker exec -i ${DB_CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} < ./migrations/seed/$(file)
+else
+	@echo 'Skipping seeding (only allowed in development).'
+endif
+
+## db/seed/list: List available mock data files
+.PHONY: db/seed/list
+db/seed/list:
+	@ls -1 ./migrations/seed/*.sql
+
 ## tidy: format all .go files, and tidy module dependencies
 .PHONY: tidy
 tidy:
