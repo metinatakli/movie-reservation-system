@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -112,4 +114,59 @@ func toApiMetadata(metadata *domain.Metadata) *api.Metadata {
 		PageSize:     metadata.PageSize,
 		TotalRecords: metadata.TotalRecords,
 	}
+}
+
+func (app *application) ShowMovieDetails(w http.ResponseWriter, r *http.Request, id int) {
+	if id < 1 {
+		app.badRequestResponse(w, r, fmt.Errorf("movie ID must be greater than zero"))
+		return
+	}
+
+	movie, err := app.movieRepo.GetById(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	resp := toMovieDetailsResponse(movie)
+
+	err = app.writeJSON(w, http.StatusOK, resp, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func toMovieDetailsResponse(movie *domain.Movie) api.MovieDetailsResponse {
+	if movie == nil {
+		return api.MovieDetailsResponse{}
+	}
+
+	resp := api.MovieDetailsResponse{
+		Id:          movie.ID,
+		Name:        movie.Title,
+		PosterUrl:   movie.PosterUrl,
+		ReleaseDate: types.Date{Time: movie.ReleaseDate},
+		Description: movie.Description,
+		Runtime:     movie.Duration,
+		Genres:      movie.Genres,
+		Language:    movie.Language,
+		Director:    movie.Director,
+		Cast:        movie.CastMembers,
+	}
+
+	if movie.Rating.Valid {
+		float64Value, floatErr := movie.Rating.Float64Value()
+		if floatErr == nil {
+			val := float32(float64Value.Float64)
+			resp.Rating = &val
+		}
+	}
+
+	return resp
 }

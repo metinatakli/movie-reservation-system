@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
@@ -237,6 +239,112 @@ func TestGetMovies(t *testing.T) {
 
 				if diff := cmp.Diff(tt.wantResponse, &response); diff != "" {
 					t.Errorf("GetMovies() response mismatch (-want +got):\n%s", diff)
+				}
+			}
+
+			checkErrorResponse(t, w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func TestShowMovieDetails(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+	yesterday := today.AddDate(0, 0, -1)
+
+	tests := []struct {
+		name           string
+		id             int
+		getByIdFunc    func(context.Context, int) (*domain.Movie, error)
+		wantStatus     int
+		wantResponse   *api.MovieDetailsResponse
+		wantErrMessage string
+	}{
+		{
+			name: "successful retrieval",
+			id:   1,
+			getByIdFunc: func(ctx context.Context, id int) (*domain.Movie, error) {
+				return &domain.Movie{
+					ID:          1,
+					Title:       "Test Movie",
+					Description: "A great movie",
+					PosterUrl:   "http://example.com/poster.jpg",
+					ReleaseDate: yesterday,
+					Director:    "John Doe",
+					CastMembers: []string{"Actor One", "Actor Two"},
+					Rating: pgtype.Numeric{
+						Int:   big.NewInt(85),
+						Exp:   -1,
+						Valid: true,
+					},
+				}, nil
+			},
+			wantStatus: http.StatusOK,
+			wantResponse: &api.MovieDetailsResponse{
+				Id:          1,
+				Name:        "Test Movie",
+				Description: "A great movie",
+				PosterUrl:   "http://example.com/poster.jpg",
+				ReleaseDate: types.Date{Time: yesterday},
+				Director:    "John Doe",
+				Cast:        []string{"Actor One", "Actor Two"},
+				Rating:      ptr(float32(8.5)),
+			},
+		},
+		{
+			name: "movie not found",
+			id:   2,
+			getByIdFunc: func(ctx context.Context, id int) (*domain.Movie, error) {
+				return nil, domain.ErrRecordNotFound
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:           "invalid ID",
+			id:             0,
+			wantStatus:     http.StatusBadRequest,
+			wantErrMessage: "movie ID must be greater than zero",
+		},
+		{
+			name: "server error",
+			id:   3,
+			getByIdFunc: func(ctx context.Context, id int) (*domain.Movie, error) {
+				return nil, fmt.Errorf("database error")
+			},
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newTestApplication(func(a *application) {
+				a.movieRepo = &mocks.MockMovieRepo{
+					GetByIdFunc: tt.getByIdFunc,
+				}
+			})
+
+			w, r := executeRequest(t, http.MethodGet, fmt.Sprintf("/movies/%d", tt.id), nil)
+
+			app.ShowMovieDetails(w, r, tt.id)
+
+			if got := w.Code; got != tt.wantStatus {
+				t.Errorf("ShowMovieDetails() status = %v, want %v", got, tt.wantStatus)
+			}
+
+			if tt.wantResponse != nil {
+				var response api.MovieDetailsResponse
+				err := json.NewDecoder(w.Body).Decode(&response)
+				if err != nil {
+					t.Fatalf("Failed to decode response: %v", err)
+				}
+
+				if diff := cmp.Diff(tt.wantResponse, &response); diff != "" {
+					t.Errorf("ShowMovieDetails() response mismatch (-want +got):\n%s", diff)
 				}
 			}
 

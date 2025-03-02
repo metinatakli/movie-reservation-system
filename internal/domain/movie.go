@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Movie struct {
@@ -17,7 +19,7 @@ type Movie struct {
 	PosterUrl   string
 	Director    string
 	CastMembers []string
-	Rating      float32
+	Rating      pgtype.Numeric
 }
 
 type Metadata struct {
@@ -67,4 +69,5 @@ func (f MovieFilters) Offset() int {
 
 type MovieRepository interface {
 	GetAll(ctx context.Context, filters MovieFilters) ([]*Movie, *Metadata, error)
+	GetById(ctx context.Context, id int) (*Movie, error)
 }

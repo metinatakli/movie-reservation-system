@@ -403,7 +403,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-
+  /movies/{id}:
+    get:
+      tags:
+        - movie
+      operationId: showMovieDetails
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+            minimum: 1
+          required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieDetailsResponse'
+        '404':
+          description: Movie not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid movie id format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -708,3 +744,48 @@ components:
           type: integer
         totalRecords:
           type: integer
+    MovieDetailsResponse:
+      type: object
+      required:
+        - id
+        - name
+        - poster_url
+        - release_date
+        - description
+        - runtime
+        - genres
+        - language
+        - director
+        - cast
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        poster_url:
+          type: string
+          format: uri
+        release_date:
+          type: string
+          format: date
+          description: The official release date of the movie
+        description:
+          type: string
+          description: A short summary of the movie
+        runtime:
+          type: integer
+        genres:
+          type: array
+          items:
+            type: string
+        language:
+          type: string
+        director:
+          type: string
+        cast:
+          type: array
+          items:
+            type: string
+        rating:
+          type: number
+          format: float

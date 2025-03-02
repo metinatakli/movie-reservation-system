@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 )
@@ -62,4 +64,36 @@ func (p *PostgresMovieRepository) GetAll(ctx context.Context, filters domain.Mov
 	metadata := domain.NewMetadata(totalRecords, filters.Page, filters.PageSize)
 
 	return movies, metadata, nil
+}
+
+func (p *PostgresMovieRepository) GetById(ctx context.Context, id int) (*domain.Movie, error) {
+	query := `SELECT id, title, description, genres, language, release_date, duration, poster_url, director,
+	 cast_members, rating
+		FROM movies
+		WHERE id = $1`
+
+	movie := &domain.Movie{}
+
+	err := p.db.QueryRow(ctx, query, id).Scan(
+		&movie.ID,
+		&movie.Title,
+		&movie.Description,
+		&movie.Genres,
+		&movie.Language,
+		&movie.ReleaseDate,
+		&movie.Duration,
+		&movie.PosterUrl,
+		&movie.Director,
+		&movie.CastMembers,
+		&movie.Rating)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrRecordNotFound
+		}
+
+		return nil, err
+	}
+
+	return movie, nil
 }
