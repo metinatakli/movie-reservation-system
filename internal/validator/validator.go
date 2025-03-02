@@ -27,6 +27,7 @@ const (
 	ErrDefaultInvalid  = "is invalid"
 	ErrInvalidPassword = "must be at least 8 characters long and include at least one uppercase letter, one lowercase letter, " +
 		"one number, and one special character (!@#$%^&*)."
+	ErrOneOf = "must be one of %s"
 )
 
 func NewValidator() *validator.Validate {
@@ -102,6 +103,8 @@ func ValidationMessage(err validator.FieldError) string {
 		return ErrAgeCheck
 	case "password":
 		return ErrInvalidPassword
+	case "oneof":
+		return fmt.Sprintf(ErrOneOf, err.Param())
 	default:
 		return ErrDefaultInvalid
 	}

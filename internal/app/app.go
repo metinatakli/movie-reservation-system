@@ -42,6 +42,7 @@ type application struct {
 
 	userRepo  domain.UserRepository
 	tokenRepo domain.TokenRepository
+	movieRepo domain.MovieRepository
 }
 
 type config struct {
@@ -109,6 +110,7 @@ func Run() error {
 
 	userRepo := repository.NewPostgresUserRepository(db)
 	tokenRepo := repository.NewPostgresTokenRepository(db)
+	movieRepo := repository.NewPostgresMovieRepository(db)
 
 	redis, err := newRedisPool(cfg)
 	if err != nil {
@@ -126,6 +128,7 @@ func Run() error {
 		sessionManager: newSessionManager(redis),
 		userRepo:       userRepo,
 		tokenRepo:      tokenRepo,
+		movieRepo:      movieRepo,
 	}
 
 	return app.run()

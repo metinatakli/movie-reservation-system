@@ -14,6 +14,8 @@ tags:
       Operations related to user management, including viewing and updating
       user profiles, managing user settings, and handling user-specific
       actions.
+  - name: movie
+    description: Operations related to viewing movies, movie details, showtimes.
 paths:
   /healthcheck:
     get:
@@ -344,6 +346,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /movies:
+    get:
+      tags:
+        - movie
+      summary: Get movies
+      operationId: getMovies
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=1,max=500000"
+          description: Page number (starting from 1)
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=1,max=100"
+          description: Number of results per page (max 100)
+        - in: query
+          name: term
+          schema:
+            type: string
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,max=50"
+          description: Search term for movie title or description
+        - in: query
+          name: sort
+          schema:
+            type: string
+            default: "id"
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,oneof=id -id release_date -release_date title -title duration -duration"
+          description: Sorting field (e.g., `release_date`). Use `-` prefix for descending order (e.g., `-release_date`).
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieListResponse'
+        '422':
+          description: Invalid query fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     ErrorResponse:
@@ -587,3 +647,64 @@ components:
           description: "Token sent to users' email in order to activate their account"
           x-oapi-codegen-extra-tags:
             validate: "required,len=43,base64rawurl"
+    MovieListResponse:
+      type: object
+      required:
+        - movies
+      properties:
+        movies:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovieSummary'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+    MovieSummary:
+      type: object
+      required:
+        - id
+        - name
+        - poster_url
+        - release_date
+        - description
+        - status
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        poster_url:
+          type: string
+          format: uri
+        release_date:
+          type: string
+          format: date
+          description: The official release date of the movie
+        description:
+          type: string
+          description: A short summary of the movie
+        status:
+          $ref: '#/components/schemas/MovieStatus'
+    MovieStatus:
+      type: string
+      enum:
+        - NOW_SHOWING
+        - COMING_SOON
+    Metadata:
+      type: object
+      required:
+        - currentPage
+        - pageSize
+        - firstPage
+        - lastPage
+        - totalRecords
+      properties:
+        currentPage:
+          type: integer
+        pageSize:
+          type: integer
+        firstPage:
+          type: integer
+        lastPage:
+          type: integer
+        totalRecords:
+          type: integer
