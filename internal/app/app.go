@@ -40,9 +40,10 @@ type application struct {
 	mailer         mailer.Mailer
 	sessionManager *scs.SessionManager
 
-	userRepo  domain.UserRepository
-	tokenRepo domain.TokenRepository
-	movieRepo domain.MovieRepository
+	userRepo    domain.UserRepository
+	tokenRepo   domain.TokenRepository
+	movieRepo   domain.MovieRepository
+	theaterRepo domain.TheaterRepository
 }
 
 type config struct {
@@ -111,6 +112,7 @@ func Run() error {
 	userRepo := repository.NewPostgresUserRepository(db)
 	tokenRepo := repository.NewPostgresTokenRepository(db)
 	movieRepo := repository.NewPostgresMovieRepository(db)
+	theaterRepo := repository.NewPostgresTheaterRepository(db)
 
 	redis, err := newRedisPool(cfg)
 	if err != nil {
@@ -129,6 +131,7 @@ func Run() error {
 		userRepo:       userRepo,
 		tokenRepo:      tokenRepo,
 		movieRepo:      movieRepo,
+		theaterRepo:    theaterRepo,
 	}
 
 	return app.run()

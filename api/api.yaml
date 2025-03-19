@@ -440,6 +440,82 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /movies/{id}/showtimes:
+    get:
+      tags:
+        - movie
+      operationId: getMovieShowtimes
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+            minimum: 1
+          required: true
+        - in: query
+          name: latitude
+          schema:
+            type: number
+            format: double
+          required: true
+          x-oapi-codegen-extra-tags:
+            validate: "required,latitude"
+        - in: query
+          name: longitude
+          schema:
+            type: number
+            format: double
+          required: true
+          x-oapi-codegen-extra-tags:
+            validate: "required,longitude"
+        - in: query
+          name: date
+          schema:
+            type: string
+          required: true
+          x-oapi-codegen-extra-tags:
+            validate: "required,datetime=2006-01-02"
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=1,max=500000"
+          description: Page number (starting from 1)
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=1,max=100"
+          description: Number of results per page (max 100)
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieShowtimesResponse'
+        '404':
+          description: Movie not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid movie id format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -789,3 +865,141 @@ components:
         rating:
           type: number
           format: float
+
+    MovieShowtimesResponse:
+      type: object
+      required:
+        - date
+        - theaters
+      properties:
+        date:
+          type: string
+          format: date
+          description: The date for which showtimes are being listed.
+        theaters:
+          type: array
+          items:
+            $ref: '#/components/schemas/TheaterShowtimes'
+          description: A list of theaters showing the movie on the specified date.
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+
+    TheaterShowtimes:
+      type: object
+      required:
+        - id
+        - name
+        - address
+        - city
+        - district
+        - distance
+        - amenities
+        - halls
+      properties:
+        id:
+          type: integer
+          description: The unique identifier for the theater.
+        name:
+          type: string
+          description: The name of the theater.
+        address:
+          type: string
+          description: The full address of the theater.
+        city:
+          type: string
+          description: The city where the theater is located.
+        district:
+          type: string
+          description: The district or neighborhood where the theater is located.
+        distance:
+          type: number
+          format: double
+          description: The distance of the theater from the user's location, in kilometers.
+        amenities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+          description: The list of amenities available at the theater (e.g., IMAX, Dolby Atmos).
+        halls:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hall'
+          description: The list of halls available in the theater.
+
+    Amenity:
+      type: object
+      required:
+        - id
+        - name
+        - description
+      properties:
+        id:
+          type: integer
+          description: The unique identifier for the amenity.
+        name:
+          type: string
+          description: The name of the amenity (e.g., "Recliner Seats", "Dolby Atmos").
+        description:
+          type: string
+          description: A brief description of the amenity.
+
+    Hall:
+      type: object
+      required:
+        - id
+        - name
+        - amenities
+        - showtimes
+      properties:
+        id:
+          type: integer
+          description: The unique identifier for the hall.
+        name:
+          type: string
+          description: The name of the hall.
+        amenities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+          description: A list of amenities available in the hall.
+        showtimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Showtime'
+          description: A list of showtimes available in this hall.
+
+    Showtime:
+      type: object
+      required:
+        - id
+        - startTime
+        - startDateTime
+        - price
+        - status
+      properties:
+        id:
+          type: integer
+          description: The unique identifier for the showtime.
+        startTime:
+          type: string
+          description: The start time of the movie in HH:mm format.
+        startDateTime:
+          type: string
+          format: date-time
+          description: The full start date and time of the movie in ISO 8601 format.
+        price:
+          type: number
+          description: The base price of the showtime.
+        status:
+          $ref: '#/components/schemas/ShowtimeStatus'
+          description: The availability status of the showtime.
+
+    ShowtimeStatus:
+      type: string
+      enum:
+        - AVAILABLE
+        - SOLD_OUT
+        - EXPIRED
+      description: The current status of the showtime.
+
+        

@@ -46,8 +46,8 @@ func (app *application) GetMovies(w http.ResponseWriter, r *http.Request, params
 	}
 }
 
-func toMovieFilters(params api.GetMoviesParams) domain.MovieFilters {
-	filters := domain.MovieFilters{
+func toMovieFilters(params api.GetMoviesParams) domain.Pagination {
+	filters := domain.Pagination{
 		Page:     DefaultPage,
 		PageSize: DefaultPageSize,
 		Sort:     DefaultSort,
@@ -169,4 +169,156 @@ func toMovieDetailsResponse(movie *domain.Movie) api.MovieDetailsResponse {
 	}
 
 	return resp
+}
+
+func (app *application) GetMovieShowtimes(
+	w http.ResponseWriter,
+	r *http.Request,
+	id int,
+	params api.GetMovieShowtimesParams) {
+
+	if id < 1 {
+		app.badRequestResponse(w, r, fmt.Errorf("movie ID must be greater than zero"))
+		return
+	}
+
+	err := app.validator.Struct(params)
+	if err != nil {
+		app.failedValidationResponse(w, r, err)
+		return
+	}
+
+	date, err := time.Parse(time.DateOnly, params.Date)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	pagination := domain.Pagination{
+		Page:     DefaultPage,
+		PageSize: DefaultPageSize,
+	}
+
+	if params.Page != nil {
+		pagination.Page = *params.Page
+	}
+
+	if params.PageSize != nil {
+		pagination.PageSize = *params.PageSize
+	}
+
+	theaters, metadata, err := app.theaterRepo.GetTheatersByMovieAndLocationAndDate(
+		r.Context(),
+		id,
+		date,
+		params.Longitude,
+		params.Latitude,
+		pagination,
+	)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	theaterShowtimes := toTheaterShowtimes(theaters)
+	apiMetadata := toApiMetadata(metadata)
+
+	resp := api.MovieShowtimesResponse{
+		Date:     types.Date{Time: date},
+		Theaters: theaterShowtimes,
+		Metadata: apiMetadata,
+	}
+
+	err = app.writeJSON(w, http.StatusOK, resp, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func toTheaterShowtimes(theaters []domain.Theater) []api.TheaterShowtimes {
+	theaterShowtimes := make([]api.TheaterShowtimes, len(theaters))
+
+	for i, v := range theaters {
+		theaterShowtime := toTheaterShowtime(v)
+		theaterShowtimes[i] = theaterShowtime
+	}
+
+	return theaterShowtimes
+}
+
+func toTheaterShowtime(theater domain.Theater) api.TheaterShowtimes {
+	return api.TheaterShowtimes{
+		Address:   theater.Address,
+		Amenities: toAmenities(theater.Amenities),
+		City:      theater.City,
+		Distance:  theater.Distance,
+		District:  theater.District,
+		Halls:     toHalls(theater.Halls),
+		Id:        theater.ID,
+		Name:      theater.Name,
+	}
+}
+
+func toAmenities(amenities []domain.Amenity) []api.Amenity {
+	apiAmenities := make([]api.Amenity, len(amenities))
+
+	for i, v := range amenities {
+		amenity := api.Amenity{
+			Id:          v.ID,
+			Name:        v.Name,
+			Description: v.Description,
+		}
+
+		apiAmenities[i] = amenity
+	}
+
+	return apiAmenities
+}
+
+func toHalls(halls []domain.Hall) []api.Hall {
+	apiHalls := make([]api.Hall, len(halls))
+
+	for i, v := range halls {
+		hall := api.Hall{
+			Id:        v.ID,
+			Amenities: toAmenities(v.Amenities),
+			Name:      v.Name,
+			Showtimes: toShowtimes(v.Showtimes),
+		}
+
+		apiHalls[i] = hall
+	}
+
+	return apiHalls
+}
+
+func toShowtimes(showtimes []domain.Showtime) []api.Showtime {
+	apiShowtimes := make([]api.Showtime, len(showtimes))
+	now := time.Now()
+
+	for i, v := range showtimes {
+		showtime := api.Showtime{
+			Id:            v.ID,
+			StartDateTime: v.StartTime,
+			StartTime:     v.StartTime.Format("15:04"),
+		}
+
+		if v.BasePrice.Valid {
+			float64Value, floatErr := v.BasePrice.Float64Value()
+			if floatErr == nil {
+				showtime.Price = float32(float64Value.Float64)
+			}
+		}
+
+		// TODO: Add SOLD_OUT
+		if showtime.StartDateTime.Before(now) {
+			showtime.Status = api.EXPIRED
+		} else {
+			showtime.Status = api.AVAILABLE
+		}
+
+		apiShowtimes[i] = showtime
+	}
+
+	return apiShowtimes
 }

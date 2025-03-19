@@ -8,11 +8,11 @@ import (
 
 type MockMovieRepo struct {
 	domain.MovieRepository
-	GetAllFunc  func(ctx context.Context, filters domain.MovieFilters) ([]*domain.Movie, *domain.Metadata, error)
+	GetAllFunc  func(ctx context.Context, filters domain.Pagination) ([]*domain.Movie, *domain.Metadata, error)
 	GetByIdFunc func(ctx context.Context, id int) (*domain.Movie, error)
 }
 
-func (m *MockMovieRepo) GetAll(ctx context.Context, filters domain.MovieFilters) ([]*domain.Movie, *domain.Metadata, error) {
+func (m *MockMovieRepo) GetAll(ctx context.Context, filters domain.Pagination) ([]*domain.Movie, *domain.Metadata, error) {
 	return m.GetAllFunc(ctx, filters)
 }
 

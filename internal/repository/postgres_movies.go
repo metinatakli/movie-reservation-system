@@ -20,16 +20,19 @@ func NewPostgresMovieRepository(db *pgxpool.Pool) *PostgresMovieRepository {
 	}
 }
 
-func (p *PostgresMovieRepository) GetAll(ctx context.Context, filters domain.MovieFilters) ([]*domain.Movie, *domain.Metadata, error) {
+func (p *PostgresMovieRepository) GetAll(
+	ctx context.Context,
+	pagination domain.Pagination) ([]*domain.Movie, *domain.Metadata, error) {
+
 	query := fmt.Sprintf(`SELECT count(*) OVER(), id, title, description, release_date, poster_url
 		FROM movies
 		WHERE ((to_tsvector('english', title) @@ plainto_tsquery('english', $1) 
 			OR to_tsvector('english', description) @@ plainto_tsquery('english', $1))
 			OR $1 = '') 
 		ORDER BY %s %s
-		LIMIT $2 OFFSET $3`, filters.SortColumn(), filters.SortDirection())
+		LIMIT $2 OFFSET $3`, pagination.SortColumn(), pagination.SortDirection())
 
-	rows, err := p.db.Query(ctx, query, filters.Term, filters.Limit(), filters.Offset())
+	rows, err := p.db.Query(ctx, query, pagination.Term, pagination.Limit(), pagination.Offset())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,7 +64,7 @@ func (p *PostgresMovieRepository) GetAll(ctx context.Context, filters domain.Mov
 		return nil, nil, err
 	}
 
-	metadata := domain.NewMetadata(totalRecords, filters.Page, filters.PageSize)
+	metadata := domain.NewMetadata(totalRecords, pagination.Page, pagination.PageSize)
 
 	return movies, metadata, nil
 }
