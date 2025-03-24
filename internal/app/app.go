@@ -12,12 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alexedwards/scs/redisstore"
+	"github.com/alexedwards/scs/goredisstore"
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-playground/validator/v10"
-	"github.com/gomodule/redigo/redis"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
@@ -25,6 +24,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/repository"
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -35,7 +35,7 @@ type application struct {
 	config         config
 	logger         *slog.Logger
 	db             *pgxpool.Pool
-	redis          *redis.Pool
+	redis          *redis.Client
 	validator      *validator.Validate
 	mailer         mailer.Mailer
 	sessionManager *scs.SessionManager
@@ -116,20 +116,20 @@ func Run() error {
 	theaterRepo := repository.NewPostgresTheaterRepository(db)
 	seatRepo := repository.NewPostgresSeatRepository(db)
 
-	redis, err := newRedisPool(cfg)
+	redisClient, err := newRedisClient(cfg)
 	if err != nil {
 		return err
 	}
-	defer redis.Close()
+	defer redisClient.Close()
 
 	app := &application{
 		config:         cfg,
 		logger:         logger,
 		db:             db,
-		redis:          redis,
+		redis:          redisClient,
 		validator:      validator,
 		mailer:         mailer.NewSMTPMailer(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
-		sessionManager: newSessionManager(redis),
+		sessionManager: newSessionManager(redisClient),
 		userRepo:       userRepo,
 		tokenRepo:      tokenRepo,
 		movieRepo:      movieRepo,
@@ -140,37 +140,33 @@ func Run() error {
 	return app.run()
 }
 
-func newSessionManager(pool *redis.Pool) *scs.SessionManager {
+func newSessionManager(client *redis.Client) *scs.SessionManager {
 	sessionManager := scs.New()
 
-	sessionManager.Store = redisstore.New(pool)
+	sessionManager.Store = goredisstore.New(client)
 	sessionManager.IdleTimeout = 20 * time.Minute
 	sessionManager.Cookie.Name = "session_id"
 
 	return sessionManager
 }
 
-func newRedisPool(cfg config) (*redis.Pool, error) {
-	pool := &redis.Pool{
-		MaxIdle:     cfg.redis.maxIdleConns,
-		MaxActive:   cfg.redis.maxOpenConns,
-		IdleTimeout: cfg.redis.maxIdleTime,
-		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", cfg.redis.url)
-		},
-	}
+func newRedisClient(cfg config) (*redis.Client, error) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr:            cfg.redis.url,
+		MaxIdleConns:    cfg.redis.maxIdleConns,
+		MaxActiveConns:  cfg.redis.maxOpenConns,
+		ConnMaxIdleTime: cfg.redis.maxIdleTime,
+	})
 
-	conn := pool.Get()
-	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-	_, err := conn.Do("PING")
+	err := rdb.Ping(ctx).Err()
 	if err != nil {
-		fmt.Printf("Redis connection error: %s", err.Error())
-		pool.Close()
 		return nil, err
 	}
 
-	return pool, nil
+	return rdb, nil
 }
 
 func newDatabasePool(cfg config) (*pgxpool.Pool, error) {
