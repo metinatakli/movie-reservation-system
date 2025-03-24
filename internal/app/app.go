@@ -44,6 +44,7 @@ type application struct {
 	tokenRepo   domain.TokenRepository
 	movieRepo   domain.MovieRepository
 	theaterRepo domain.TheaterRepository
+	seatRepo    domain.SeatRepository
 }
 
 type config struct {
@@ -113,6 +114,7 @@ func Run() error {
 	tokenRepo := repository.NewPostgresTokenRepository(db)
 	movieRepo := repository.NewPostgresMovieRepository(db)
 	theaterRepo := repository.NewPostgresTheaterRepository(db)
+	seatRepo := repository.NewPostgresSeatRepository(db)
 
 	redis, err := newRedisPool(cfg)
 	if err != nil {
@@ -132,6 +134,7 @@ func Run() error {
 		tokenRepo:      tokenRepo,
 		movieRepo:      movieRepo,
 		theaterRepo:    theaterRepo,
+		seatRepo:       seatRepo,
 	}
 
 	return app.run()

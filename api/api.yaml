@@ -16,6 +16,8 @@ tags:
       actions.
   - name: movie
     description: Operations related to viewing movies, movie details, showtimes.
+  - name: showtimes
+    description: Operations related to movie showtimes, including schedules and seat availability.
 paths:
   /healthcheck:
     get:
@@ -516,6 +518,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /showtimes/{showtime_id}/seat-map:
+    get:
+      tags:
+        - showtimes
+      operationId: getSeatMapByShowtime
+      parameters:
+        - in: path
+          name: showtime_id
+          schema:
+            type: integer
+            minimum: 1
+          required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeatMapResponse'
+        '404':
+          description: Showtime not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -1002,4 +1035,81 @@ components:
         - EXPIRED
       description: The current status of the showtime.
 
-        
+    SeatMapResponse:
+      type: object
+      required:
+        - theaterId
+        - theaterName
+        - hallId
+        - showtimeId
+        - seatRows
+      properties:
+        theaterId:
+          type: integer
+          description: Unique identifier for the theater.
+        theaterName:
+          type: string
+          description: The name of the theater."
+        hallId:
+          type: integer
+          description: Unique identifier for the hall within the theater.
+        showtimeId:
+          type: integer
+          description: Unique identifier for the showtime.
+        seatRows:
+          type: array
+          description: An array representing the rows of seats in the hall.
+          items:
+            $ref: "#/components/schemas/SeatRow"
+    
+    SeatRow:
+      type: object
+      required:
+        - row
+        - seats
+      properties:
+        row:
+          type: integer
+          description: The row number in the hall.
+        seats:
+          type: array
+          description: An array of individual seats in this row.
+          items:
+            $ref: "#/components/schemas/Seat"
+
+    Seat:
+      type: object
+      required:
+        - id
+        - row
+        - column
+        - type
+        - extraPrice
+        - available
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the seat.
+        row:
+          type: integer
+          description: The row number of the seat.
+        column:
+          type: integer
+          description: The column number of the seat in the row.
+        type:
+          $ref: '#/components/schemas/SeatType'
+          description: The type of seat (e.g., Standard, VIP, Recliner, Accessible).
+        extraPrice:
+          type: number
+          description: The additional price for the seat, if any.
+        available:
+          type: boolean
+          description: Indicates whether the seat is available for reservation.
+
+    SeatType:
+      type: string
+      enum:
+        - Standard
+        - VIP
+        - Recliner
+        - Accessible
