@@ -251,6 +251,7 @@ func (app *application) routes() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(app.recoverPanic)
 	r.Use(app.sessionManager.LoadAndSave)
+	r.Use(app.ensureGuestUserSession)
 
 	return api.HandlerFromMux(app, r)
 }
