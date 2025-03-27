@@ -199,6 +199,14 @@ func (app *application) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// To help prevent session fixation attacks we should renew the session token after any privilege level change.
+	// https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Session_Management_Cheat_Sheet.md#renew-the-session-id-after-any-privilege-level-change
+	err = app.sessionManager.RenewToken(r.Context())
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
 	app.sessionManager.Put(r.Context(), SessionKeyUserId, user.ID)
 
 	w.WriteHeader(http.StatusNoContent)
