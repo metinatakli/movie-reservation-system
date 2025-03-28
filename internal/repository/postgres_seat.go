@@ -45,6 +45,7 @@ func (p *PostgresSeatRepository) GetSeatsByShowtime(ctx context.Context, showtim
 	}
 	defer rows.Close()
 
+	// bug: Next() moves the cursor to the next line here, one row will be missed in the result
 	if !rows.Next() {
 		return nil, domain.ErrRecordNotFound
 	}
@@ -58,6 +59,52 @@ func (p *PostgresSeatRepository) GetSeatsByShowtime(ctx context.Context, showtim
 			&showtimeSeats.TheaterID,
 			&showtimeSeats.TheaterName,
 			&showtimeSeats.HallID,
+			&seat.ID,
+			&seat.Row,
+			&seat.Col,
+			&seat.Type,
+			&seat.ExtraPrice,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		showtimeSeats.Seats = append(showtimeSeats.Seats, seat)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &showtimeSeats, nil
+}
+
+func (p *PostgresSeatRepository) GetSeatsByShowtimeAndSeatIds(
+	ctx context.Context,
+	showtimeID int,
+	seatIDs []int) (*domain.ShowtimeSeats, error) {
+
+	query := `
+		SELECT sh.base_price, se.id, se.seat_row, se.seat_col, se.seat_type, se.extra_price
+		FROM showtimes sh
+		JOIN seats se
+			ON se.hall_id = sh.hall_id
+		WHERE sh.id = $1 AND se.id = ANY($2::int[]);
+	`
+
+	rows, err := p.db.Query(ctx, query, showtimeID, seatIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var showtimeSeats domain.ShowtimeSeats
+
+	for rows.Next() {
+		var seat domain.Seat
+
+		err = rows.Scan(
+			&showtimeSeats.Price,
 			&seat.ID,
 			&seat.Row,
 			&seat.Col,

@@ -11,6 +11,7 @@ type ShowtimeSeats struct {
 	TheaterName string
 	HallID      int
 	Seats       []Seat
+	Price       pgtype.Numeric
 }
 
 type Seat struct {
@@ -23,4 +24,5 @@ type Seat struct {
 
 type SeatRepository interface {
 	GetSeatsByShowtime(ctx context.Context, showtimeID int) (*ShowtimeSeats, error)
+	GetSeatsByShowtimeAndSeatIds(ctx context.Context, showtimeID int, seatIDs []int) (*ShowtimeSeats, error)
 }

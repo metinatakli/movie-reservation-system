@@ -549,6 +549,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /showtimes/{showtime_id}/cart:
+    post:
+      tags:
+        - showtimes
+      operationId: createCartHandler
+      parameters:
+        - in: path
+          name: showtime_id
+          schema:
+            type: integer
+            minimum: 1
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCartRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '404':
+          description: Showtime or seatId not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Seats are already reserved by another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Invalid seatIdList format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     ErrorResponse:
@@ -1113,3 +1163,84 @@ components:
         - VIP
         - Recliner
         - Accessible
+
+    CreateCartRequest:
+      type: object
+      required:
+        - seatIdList
+      properties:
+        seatIdList:
+          type: array
+          items:
+            type: integer
+          x-oapi-codegen-extra-tags:
+            validate: "required,min=1,max=8,dive,required,gt=0"
+    
+    CartResponse:
+      type: object
+      required:
+        - cart
+      properties:
+        cart:
+          $ref: '#/components/schemas/Cart'
+
+    Cart:
+      type: object
+      required:
+        - cartId
+        - showtimeId
+        - seats
+        - holdTime
+        - totalPrice
+      properties:
+        cartId:
+          type: string
+          description: "A unique identifier for the cart."
+        showtimeId:
+          type: integer
+          description: "The ID of the showtime the user is reserving seats for."
+        seats:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartSeat'
+          description: "A list of seats selected for the reservation."
+        holdTime:
+          type: integer
+          description: "The time (in seconds) until the cart expires or the reservation is confirmed."
+        totalPrice:
+          type: string
+          x-go-type: decimal.Decimal
+          x-go-type-import:
+            path: github.com/shopspring/decimal
+            name: Decimal
+          description: "The total price for all the seats in the cart."
+
+    CartSeat:
+      type: object
+      required:
+        - id
+        - row
+        - column
+        - type
+        - price
+      properties:
+        id:
+          type: integer
+          description: "The unique identifier for the seat."
+        row:
+          type: integer
+          description: "The row number of the seat in the hall."
+        column:
+          type: integer
+          description: "The column number of the seat in the hall."
+        type:
+          $ref: '#/components/schemas/SeatType'
+          description: "The type of the seat"
+        price:
+          type: string
+          x-go-type: decimal.Decimal
+          x-go-type-import:
+            path: github.com/shopspring/decimal
+            name: Decimal
+          description: "The price of the seat."
+    

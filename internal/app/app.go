@@ -35,7 +35,7 @@ type application struct {
 	config         config
 	logger         *slog.Logger
 	db             *pgxpool.Pool
-	redis          *redis.Client
+	redis          redis.Cmdable
 	validator      *validator.Validate
 	mailer         mailer.Mailer
 	sessionManager *scs.SessionManager
@@ -202,7 +202,7 @@ func (app *application) run() error {
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		ErrorLog:     slog.NewLogLogger(app.logger.Handler(), slog.LevelError),
+		ErrorLog:     slog.NewLogLogger(app.logger.Handler(), slog.LevelDebug),
 	}
 
 	shutdownError := make(chan error)
