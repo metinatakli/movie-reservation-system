@@ -69,15 +69,15 @@ func TestGetSeatMapByShowtime(t *testing.T) {
 			wantErrMessage: "showtime ID must be greater than zero",
 		},
 		{
-			name:       "showtime not found",
+			name:       "seat data related to showtime not found",
 			showtimeID: 999,
 			getSeatsByShowtimeFunc: func(ctx context.Context, id int) (*domain.ShowtimeSeats, error) {
-				return nil, domain.ErrRecordNotFound
+				return &domain.ShowtimeSeats{}, nil
 			},
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:       "server error",
+			name:       "database error",
 			showtimeID: 1,
 			getSeatsByShowtimeFunc: func(ctx context.Context, id int) (*domain.ShowtimeSeats, error) {
 				return nil, fmt.Errorf("database error")

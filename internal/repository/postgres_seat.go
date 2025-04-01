@@ -45,11 +45,6 @@ func (p *PostgresSeatRepository) GetSeatsByShowtime(ctx context.Context, showtim
 	}
 	defer rows.Close()
 
-	// bug: Next() moves the cursor to the next line here, one row will be missed in the result
-	if !rows.Next() {
-		return nil, domain.ErrRecordNotFound
-	}
-
 	var showtimeSeats domain.ShowtimeSeats
 
 	for rows.Next() {

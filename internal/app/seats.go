@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -21,13 +20,12 @@ func (app *application) GetSeatMapByShowtime(
 
 	showtimeSeats, err := app.seatRepo.GetSeatsByShowtime(r.Context(), showtimeID)
 	if err != nil {
-		switch {
-		case errors.Is(err, domain.ErrRecordNotFound):
-			app.notFoundResponse(w, r)
-		default:
-			app.serverErrorResponse(w, r, err)
-		}
+		app.serverErrorResponse(w, r, err)
+		return
+	}
 
+	if len(showtimeSeats.Seats) == 0 {
+		app.notFoundResponse(w, r)
 		return
 	}
 
