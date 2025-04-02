@@ -20,6 +20,7 @@ type Seat struct {
 	Col        int
 	Type       string
 	ExtraPrice pgtype.Numeric
+	Available  bool
 }
 
 type SeatRepository interface {

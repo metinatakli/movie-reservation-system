@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,32 +10,102 @@ import (
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
+	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestGetSeatMapByShowtime(t *testing.T) {
+type SeatsTestSuite struct {
+	suite.Suite
+	app         *application
+	seatRepo    *mocks.MockSeatRepo
+	redisClient *mocks.MockRedisClient
+}
+
+func (s *SeatsTestSuite) SetupTest() {
+	s.seatRepo = new(mocks.MockSeatRepo)
+	s.redisClient = new(mocks.MockRedisClient)
+
+	s.app = newTestApplication(func(a *application) {
+		a.seatRepo = s.seatRepo
+		a.redis = s.redisClient
+	})
+}
+
+func TestSeatsSuite(t *testing.T) {
+	suite.Run(t, new(SeatsTestSuite))
+}
+
+func (s *SeatsTestSuite) TestGetSeatMapByShowtime() {
 	tests := []struct {
-		name                   string
-		showtimeID             int
-		getSeatsByShowtimeFunc func(context.Context, int) (*domain.ShowtimeSeats, error)
-		wantStatus             int
-		wantResponse           *api.SeatMapResponse
-		wantErrMessage         string
+		name           string
+		showtimeID     int
+		setupMocks     func()
+		wantStatus     int
+		wantResponse   *api.SeatMapResponse
+		wantErrMessage string
 	}{
 		{
-			name:       "successful retrieval",
+			name:           "should fail when showtime ID is zero or negative",
+			showtimeID:     0,
+			wantStatus:     http.StatusBadRequest,
+			wantErrMessage: "showtime ID must be greater than zero",
+		},
+		{
+			name:       "should fail when seat data related to showtime is not found",
+			showtimeID: 999,
+			setupMocks: func() {
+				s.seatRepo.On("GetSeatsByShowtime", mock.Anything, 999).Return(&domain.ShowtimeSeats{}, nil)
+			},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "should fail when database error occurs while fetching seats",
 			showtimeID: 1,
-			getSeatsByShowtimeFunc: func(ctx context.Context, id int) (*domain.ShowtimeSeats, error) {
-				return &domain.ShowtimeSeats{
+			setupMocks: func() {
+				s.seatRepo.On("GetSeatsByShowtime", mock.Anything, 1).Return(nil, fmt.Errorf("database error"))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:       "should fail when redis script execution fails",
+			showtimeID: 1,
+			setupMocks: func() {
+				s.seatRepo.On("GetSeatsByShowtime", mock.Anything, 1).Return(&domain.ShowtimeSeats{
 					TheaterID:   1,
 					TheaterName: "Test Theater",
 					HallID:      2,
 					Seats: []domain.Seat{
-						{ID: 1, Row: 1, Col: 1, Type: "Standard"},
-						{ID: 2, Row: 1, Col: 2, Type: "Accessible"},
-						{ID: 3, Row: 2, Col: 1, Type: "VIP"},
-						{ID: 4, Row: 2, Col: 2, Type: "Recliner"},
+						{ID: 1, Row: 1, Col: 1, Type: "Standard", Available: true},
+						{ID: 2, Row: 1, Col: 2, Type: "Accessible", Available: true},
 					},
-				}, nil
+				}, nil)
+
+				s.redisClient.On("EvalSha", mock.Anything, mock.Anything, []string{seatSetKey(1)}, mock.Anything).
+					Return(redis.NewCmdResult(nil, fmt.Errorf("redis error")))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:       "should return seat map with valid input",
+			showtimeID: 1,
+			setupMocks: func() {
+				s.seatRepo.On("GetSeatsByShowtime", mock.Anything, 1).Return(&domain.ShowtimeSeats{
+					TheaterID:   1,
+					TheaterName: "Test Theater",
+					HallID:      2,
+					Seats: []domain.Seat{
+						{ID: 1, Row: 1, Col: 1, Type: "Standard", Available: true},
+						{ID: 2, Row: 1, Col: 2, Type: "Accessible", Available: true},
+						{ID: 3, Row: 2, Col: 1, Type: "VIP", Available: true},
+						{ID: 4, Row: 2, Col: 2, Type: "Recliner", Available: true},
+					},
+				}, nil)
+
+				s.redisClient.On("EvalSha", mock.Anything, mock.Anything, []string{seatSetKey(1)}, mock.Anything).
+					Return(redis.NewCmdResult([]interface{}{"2", "4"}, nil))
 			},
 			wantStatus: http.StatusOK,
 			wantResponse: &api.SeatMapResponse{
@@ -49,73 +118,47 @@ func TestGetSeatMapByShowtime(t *testing.T) {
 						Row: 1,
 						Seats: []api.Seat{
 							{Id: 1, Row: 1, Column: 1, Type: api.Standard, Available: true},
-							{Id: 2, Row: 1, Column: 2, Type: api.Accessible, Available: true},
+							{Id: 2, Row: 1, Column: 2, Type: api.Accessible, Available: false},
 						},
 					},
 					{
 						Row: 2,
 						Seats: []api.Seat{
 							{Id: 3, Row: 2, Column: 1, Type: api.VIP, Available: true},
-							{Id: 4, Row: 2, Column: 2, Type: api.Recliner, Available: true},
+							{Id: 4, Row: 2, Column: 2, Type: api.Recliner, Available: false},
 						},
 					},
 				},
 			},
 		},
-		{
-			name:           "invalid showtime ID",
-			showtimeID:     0,
-			wantStatus:     http.StatusBadRequest,
-			wantErrMessage: "showtime ID must be greater than zero",
-		},
-		{
-			name:       "seat data related to showtime not found",
-			showtimeID: 999,
-			getSeatsByShowtimeFunc: func(ctx context.Context, id int) (*domain.ShowtimeSeats, error) {
-				return &domain.ShowtimeSeats{}, nil
-			},
-			wantStatus: http.StatusNotFound,
-		},
-		{
-			name:       "database error",
-			showtimeID: 1,
-			getSeatsByShowtimeFunc: func(ctx context.Context, id int) (*domain.ShowtimeSeats, error) {
-				return nil, fmt.Errorf("database error")
-			},
-			wantStatus:     http.StatusInternalServerError,
-			wantErrMessage: ErrInternalServer,
-		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
-				a.seatRepo = &mocks.MockSeatRepo{
-					GetSeatsByShowtimeFunc: tt.getSeatsByShowtimeFunc,
-				}
-			})
+		s.Run(tt.name, func() {
+			s.SetupTest()
 
-			w, r := executeRequest(t, http.MethodGet, fmt.Sprintf("/showtimes/%d/seats", tt.showtimeID), nil)
+			defer s.seatRepo.AssertExpectations(s.T())
+			defer s.redisClient.AssertExpectations(s.T())
 
-			app.GetSeatMapByShowtime(w, r, tt.showtimeID)
-
-			if got := w.Code; got != tt.wantStatus {
-				t.Errorf("GetSeatMapByShowtime() status = %v, want %v", got, tt.wantStatus)
+			if tt.setupMocks != nil {
+				tt.setupMocks()
 			}
+
+			w, r := executeRequest(s.T(), http.MethodGet, fmt.Sprintf("/showtimes/%d/seats", tt.showtimeID), nil)
+			s.app.GetSeatMapByShowtime(w, r, tt.showtimeID)
+
+			s.Equal(tt.wantStatus, w.Code)
 
 			if tt.wantResponse != nil {
 				var response api.SeatMapResponse
 				err := json.NewDecoder(w.Body).Decode(&response)
-				if err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
+				s.Require().NoError(err, "Failed to decode response")
 
-				if diff := cmp.Diff(tt.wantResponse, &response); diff != "" {
-					t.Errorf("GetSeatMapByShowtime() response mismatch (-want +got):\n%s", diff)
-				}
+				diff := cmp.Diff(tt.wantResponse, &response)
+				s.Empty(diff, "Response mismatch (-want +got):\n%s", diff)
 			}
 
-			checkErrorResponse(t, w, struct {
+			checkErrorResponse(s.T(), w, struct {
 				wantStatus     int
 				wantErrMessage string
 			}{

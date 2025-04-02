@@ -33,6 +33,12 @@ func (m *MockRedisClient) SRem(ctx context.Context, key string, members ...inter
 	return args.Get(0).(*redis.IntCmd)
 }
 
+func (m *MockRedisClient) EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) *redis.Cmd {
+	callArgs := append([]interface{}{ctx, sha1, keys}, args...)
+	result := m.Called(callArgs...)
+	return result.Get(0).(*redis.Cmd)
+}
+
 type MockTxPipeline struct {
 	mock.Mock
 	redis.Pipeliner

@@ -50,6 +50,8 @@ func (p *PostgresSeatRepository) GetSeatsByShowtime(ctx context.Context, showtim
 	for rows.Next() {
 		var seat domain.Seat
 
+		seat.Available = true
+
 		err = rows.Scan(
 			&showtimeSeats.TheaterID,
 			&showtimeSeats.TheaterName,

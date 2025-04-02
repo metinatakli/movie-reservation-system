@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/redis/go-redis/v9"
 )
 
 func (app *application) GetSeatMapByShowtime(
@@ -29,12 +31,74 @@ func (app *application) GetSeatMapByShowtime(
 		return
 	}
 
+	err = app.updateSeatAvailability(r.Context(), showtimeID, showtimeSeats)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
 	resp := toSeatMapResponse(showtimeID, showtimeSeats)
 
 	err = app.writeJSON(w, http.StatusOK, resp, nil)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
+}
+
+func (app *application) updateSeatAvailability(ctx context.Context, showtimeID int, showtimeSeats *domain.ShowtimeSeats) error {
+	filterValidLockSeats := redis.NewScript(`
+		local setKey = KEYS[1]
+		local showtimeId = ARGV[1]
+		local cursor = "0"
+		local batchSize = 100
+		local expiredSeats = {}
+		local validSeats = {}
+
+		repeat
+			local result = redis.call("SSCAN", setKey, cursor, "COUNT", batchSize)
+			cursor = result[1]
+			local seatIds = result[2]
+
+			for _, seatId in ipairs(seatIds) do
+				local lockKey = "seat_lock:" .. showtimeId .. ":" .. seatId
+				if redis.call("EXISTS", lockKey) == 0 then
+					table.insert(expiredSeats, seatId)
+				else
+					table.insert(validSeats, seatId)
+				end
+			end
+		until cursor == "0"
+
+		if #expiredSeats > 0 then
+			redis.call("SREM", setKey, unpack(expiredSeats))
+		end
+
+		return validSeats
+	`)
+
+	cmd := filterValidLockSeats.Run(ctx, app.redis, []string{seatSetKey(showtimeID)}, showtimeID)
+	_, err := cmd.Result()
+	if err != nil {
+		return err
+	}
+
+	lockedSeatsMap := make(map[int]bool)
+	seatIds, err := cmd.Int64Slice()
+	if err != nil {
+		return fmt.Errorf("unexpected Redis response type")
+	}
+
+	for _, seatId := range seatIds {
+		lockedSeatsMap[int(seatId)] = true
+	}
+
+	for i := range showtimeSeats.Seats {
+		if lockedSeatsMap[showtimeSeats.Seats[i].ID] {
+			showtimeSeats.Seats[i].Available = false
+		}
+	}
+
+	return nil
 }
 
 func toSeatMapResponse(showtimeID int, showtimeSeats *domain.ShowtimeSeats) api.SeatMapResponse {
@@ -65,7 +129,7 @@ func toSeatRows(seats []domain.Seat) []api.SeatRow {
 			Row:       v.Row,
 			Column:    v.Col,
 			Type:      api.SeatType(v.Type),
-			Available: true, // TODO: After adding reservations, change this
+			Available: v.Available, // TODO: Should add booked seats also after implementing payment
 		}
 
 		currentRow.Seats = append(currentRow.Seats, apiSeat)
