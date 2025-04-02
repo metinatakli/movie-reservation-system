@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/google/go-cmp/cmp"
@@ -18,23 +17,68 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 )
 
-// TODO: Add testify to mock easily
-// TODO: Add test case for failures during cart creation. Ensure rollback behavior is correctly executed
-func TestCreateCartHandler(t *testing.T) {
+const (
+	testShowtimeID = 1
+	testBasePrice  = 50.0
+	maxSeats       = 8
+)
+
+var (
+	testSeatIDs = []int{1, 2, 3}
+	testSeats   = []domain.Seat{
+		{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
+		{ID: 2, Row: 1, Col: 2, Type: "VIP", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(15).BigInt(), Valid: true}},
+		{ID: 3, Row: 1, Col: 3, Type: "Recliner", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(10).BigInt(), Valid: true}},
+	}
+)
+
+type MockSeatRepo struct {
+	mock.Mock
+	domain.SeatRepository
+}
+
+func (m *MockSeatRepo) GetSeatsByShowtimeAndSeatIds(ctx context.Context, showtimeID int, seatIDs []int) (*domain.ShowtimeSeats, error) {
+	args := m.Called(ctx, showtimeID, seatIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.ShowtimeSeats), args.Error(1)
+}
+
+type CartTestSuite struct {
+	suite.Suite
+	app           *application
+	seatRepo      *MockSeatRepo
+	redisClient   *mocks.MockRedisClient
+	redisPipeline *mocks.MockTxPipeline
+}
+
+func (s *CartTestSuite) SetupTest() {
+	s.seatRepo = new(MockSeatRepo)
+	s.redisClient = new(mocks.MockRedisClient)
+	s.redisPipeline = new(mocks.MockTxPipeline)
+
+	s.app = newTestApplication(func(a *application) {
+		a.seatRepo = s.seatRepo
+		a.sessionManager = scs.New()
+		a.redis = s.redisClient
+	})
+}
+
+func TestCartSuite(t *testing.T) {
+	suite.Run(t, new(CartTestSuite))
+}
+
+func (s *CartTestSuite) TestCreateCartHandler() {
 	tests := []struct {
 		name           string
 		showtimeID     int
 		input          api.CreateCartRequest
-		getSeatsFunc   func(context.Context, int, []int) (*domain.ShowtimeSeats, error)
-		redisGetFunc   func(context.Context, string) *redis.StringCmd
-		redisSetFunc   func(context.Context, string, interface{}, time.Duration) *redis.StatusCmd
-		redisSAddFunc  func(context.Context, string, ...interface{}) *redis.IntCmd
-		redisSetNXFunc func(context.Context, string, interface{}, time.Duration) *redis.BoolCmd
-		redisDelFunc   func(context.Context, ...string) *redis.IntCmd
-		redisSRemFunc  func(context.Context, string, ...interface{}) *redis.IntCmd
-		redisExecFunc  func(context.Context, []int) ([]redis.Cmder, error)
+		setupMocks     func()
 		wantStatus     int
 		wantErrMessage string
 		wantResponse   *api.CartResponse
@@ -67,7 +111,7 @@ func TestCreateCartHandler(t *testing.T) {
 			name:       "should fail when seat count exceeds maximum limit of 8",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
-				SeatIdList: []int{1, 2, 3, 4, 5, 6, 7, 8, 9},
+				SeatIdList: make([]int, maxSeats+1),
 			},
 			wantStatus:     http.StatusUnprocessableEntity,
 			wantErrMessage: fmt.Sprintf(validator.ErrMaxLength, "8"),
@@ -76,10 +120,10 @@ func TestCreateCartHandler(t *testing.T) {
 			name:       "should fail when user already has an active cart",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
-				SeatIdList: []int{1, 2, 3},
+				SeatIdList: testSeatIDs,
 			},
-			redisGetFunc: func(ctx context.Context, key string) *redis.StringCmd {
-				return redis.NewStringResult("existing-cart-id", nil)
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult("existing-cart-id", nil))
 			},
 			wantStatus:     http.StatusBadRequest,
 			wantErrMessage: "cannot create new cart if a cart already exists in session",
@@ -88,13 +132,11 @@ func TestCreateCartHandler(t *testing.T) {
 			name:       "should fail when database error occurs while fetching seats",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
-				SeatIdList: []int{1, 2, 3},
+				SeatIdList: testSeatIDs,
 			},
-			redisGetFunc: func(ctx context.Context, key string) *redis.StringCmd {
-				return redis.NewStringCmd(ctx, "")
-			},
-			getSeatsFunc: func(ctx context.Context, showtimeID int, seatIDs []int) (*domain.ShowtimeSeats, error) {
-				return nil, fmt.Errorf("database error")
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(nil, fmt.Errorf("database error"))
 			},
 			wantStatus:     http.StatusInternalServerError,
 			wantErrMessage: ErrInternalServer,
@@ -103,17 +145,13 @@ func TestCreateCartHandler(t *testing.T) {
 			name:       "should fail when requested seats are not available for showtime",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
-				SeatIdList: []int{1, 2, 3},
+				SeatIdList: testSeatIDs,
 			},
-			redisGetFunc: func(ctx context.Context, key string) *redis.StringCmd {
-				return redis.NewStringCmd(ctx, "")
-			},
-			getSeatsFunc: func(ctx context.Context, showtimeID int, seatIDs []int) (*domain.ShowtimeSeats, error) {
-				return &domain.ShowtimeSeats{
-					Seats: []domain.Seat{
-						{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
-					},
-				}, nil
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
+					Seats: testSeats[:1],
+				}, nil)
 			},
 			wantStatus:     http.StatusBadRequest,
 			wantErrMessage: "the provided seat IDs don't match the available seats for the showtime",
@@ -122,77 +160,84 @@ func TestCreateCartHandler(t *testing.T) {
 			name:       "should handle concurrent seat locking failures",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
-				SeatIdList: []int{1, 2, 3},
+				SeatIdList: testSeatIDs,
 			},
-			redisGetFunc: func(ctx context.Context, key string) *redis.StringCmd {
-				return redis.NewStringCmd(ctx, "")
-			},
-			getSeatsFunc: func(ctx context.Context, showtimeID int, seatIDs []int) (*domain.ShowtimeSeats, error) {
-				return &domain.ShowtimeSeats{
-					Seats: []domain.Seat{
-						{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
-						{ID: 2, Row: 1, Col: 2, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
-						{ID: 3, Row: 1, Col: 3, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
-					},
-				}, nil
-			},
-			redisSetNXFunc: func(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
-				return redis.NewBoolCmd(ctx, false)
-			},
-			redisExecFunc: func(ctx context.Context, seatIDs []int) ([]redis.Cmder, error) {
-				cmds := make([]redis.Cmder, len(seatIDs))
-				for i := range seatIDs {
-					if i == 0 {
-						cmds[i] = redis.NewBoolResult(false, nil)
-					} else {
-						cmds[i] = redis.NewBoolResult(true, nil)
-					}
-				}
-				return cmds, nil
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
+					Seats: testSeats,
+				}, nil)
+				s.redisClient.On("TxPipeline").Return(s.redisPipeline)
+				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), false))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
+					redis.NewBoolResult(false, nil),
+					redis.NewBoolResult(true, nil),
+					redis.NewBoolResult(true, nil),
+				}, nil)
 			},
 			wantStatus:     http.StatusConflict,
 			wantErrMessage: ErrEditConflict,
 		},
 		{
+			name:       "should handle Redis pipeline execution failures during cart creation",
+			showtimeID: 1,
+			input: api.CreateCartRequest{
+				SeatIdList: testSeatIDs,
+			},
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
+					Seats: testSeats,
+				}, nil)
+
+				// First pipeline (tryLockSeats) should succeed
+				s.redisClient.On("TxPipeline").Return(s.redisPipeline).Once()
+				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), true))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
+					redis.NewBoolResult(true, nil),
+					redis.NewBoolResult(true, nil),
+					redis.NewBoolResult(true, nil),
+				}, nil).Once()
+
+				// Second pipeline (createCart) should fail
+				s.redisClient.On("TxPipeline").Return(s.redisPipeline).Once()
+				s.redisPipeline.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewStatusCmd(context.Background(), "OK"))
+				s.redisPipeline.On("SAdd", mock.Anything, mock.Anything, mock.Anything).Return(redis.NewIntCmd(context.Background(), 1))
+				s.redisPipeline.On("Exec", mock.Anything).Return(nil, fmt.Errorf("redis pipeline execution failed")).Once()
+
+				// Verify rollback behavior - ensure deletion methods are called at least once for each seat ID
+				for _, seatID := range testSeatIDs {
+					s.redisClient.On("Del", mock.Anything, []string{seatLockKey(1, seatID)}).Return(redis.NewIntCmd(context.Background(), 1)).Once()
+				}
+
+				for _, seatID := range testSeatIDs {
+					s.redisClient.On("SRem", mock.Anything, seatSetKey(1), []interface{}{seatID}).Return(redis.NewIntCmd(context.Background(), 1)).Once()
+				}
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
 			name:       "should successfully create cart with valid input",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
-				SeatIdList: []int{1, 2, 3},
+				SeatIdList: testSeatIDs,
 			},
-			getSeatsFunc: func(ctx context.Context, showtimeID int, seatIDs []int) (*domain.ShowtimeSeats, error) {
-				return &domain.ShowtimeSeats{
-					Seats: []domain.Seat{
-						{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
-						{ID: 2, Row: 1, Col: 2, Type: "VIP", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(15).BigInt(), Valid: true}},
-						{ID: 3, Row: 1, Col: 3, Type: "Recliner", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(10).BigInt(), Valid: true}},
-					},
-					Price: pgtype.Numeric{Int: decimal.NewFromFloat(50).BigInt(), Valid: true},
-				}, nil
-			},
-			redisGetFunc: func(ctx context.Context, key string) *redis.StringCmd {
-				return redis.NewStringCmd(ctx, "")
-			},
-			redisSetFunc: func(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
-				return redis.NewStatusCmd(ctx, "OK")
-			},
-			redisSAddFunc: func(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
-				return redis.NewIntCmd(ctx, 1)
-			},
-			redisSetNXFunc: func(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
-				return redis.NewBoolCmd(ctx, true)
-			},
-			redisDelFunc: func(ctx context.Context, keys ...string) *redis.IntCmd {
-				return redis.NewIntCmd(ctx, 1)
-			},
-			redisSRemFunc: func(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
-				return redis.NewIntCmd(ctx, 1)
-			},
-			redisExecFunc: func(ctx context.Context, seatIDs []int) ([]redis.Cmder, error) {
-				cmds := make([]redis.Cmder, len(seatIDs))
-				for i := range seatIDs {
-					cmds[i] = redis.NewBoolResult(true, nil)
-				}
-				return cmds, nil
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
+					Seats: testSeats,
+					Price: pgtype.Numeric{Int: decimal.NewFromFloat(testBasePrice).BigInt(), Valid: true},
+				}, nil)
+				s.redisClient.On("TxPipeline").Return(s.redisPipeline)
+				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), true))
+				s.redisPipeline.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewStatusCmd(context.Background(), "OK"))
+				s.redisPipeline.On("SAdd", mock.Anything, mock.Anything, mock.Anything).Return(redis.NewIntCmd(context.Background(), 1))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
+					redis.NewBoolResult(true, nil),
+					redis.NewBoolResult(true, nil),
+					redis.NewBoolResult(true, nil),
+				}, nil)
 			},
 			wantStatus: http.StatusOK,
 			wantResponse: &api.CartResponse{
@@ -211,60 +256,39 @@ func TestCreateCartHandler(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
-				a.seatRepo = &mocks.MockSeatRepo{
-					GetSeatsByShowtimeAndSeatIdsFunc: tt.getSeatsFunc,
-				}
-				a.sessionManager = scs.New()
-				a.redis = &mocks.MockRedisClient{
-					GetFunc: tt.redisGetFunc,
-					TxPipelineFunc: func() redis.Pipeliner {
-						return &mocks.MockTxPipeline{
-							SetNXFunc: tt.redisSetNXFunc,
-							SetFunc:   tt.redisSetFunc,
-							SAddFunc:  tt.redisSAddFunc,
-							ExecFunc: func(ctx context.Context) ([]redis.Cmder, error) {
-								if tt.redisExecFunc != nil {
-									return tt.redisExecFunc(ctx, tt.input.SeatIdList)
-								}
-								return nil, nil
-							},
-						}
-					},
-					DelFunc:  tt.redisDelFunc,
-					SRemFunc: tt.redisSRemFunc,
-				}
-			})
+		s.Run(tt.name, func() {
+			s.SetupTest()
 
-			w, r := executeRequest(t, http.MethodPost, fmt.Sprintf("/showtimes/%d/cart", tt.showtimeID), tt.input)
+			defer s.seatRepo.AssertExpectations(s.T())
+			defer s.redisClient.AssertExpectations(s.T())
+			defer s.redisPipeline.AssertExpectations(s.T())
 
-			r = setupTestSession(t, app, r, 1)
+			if tt.setupMocks != nil {
+				tt.setupMocks()
+			}
+
+			w, r := executeRequest(s.T(), http.MethodPost, fmt.Sprintf("/showtimes/%d/cart", tt.showtimeID), tt.input)
+			r = setupTestSession(s.T(), s.app, r, 1)
 
 			handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				app.CreateCartHandler(w, r, tt.showtimeID)
+				s.app.CreateCartHandler(w, r, tt.showtimeID)
 			}))
-			handler = app.sessionManager.LoadAndSave(handler)
+			handler = s.app.sessionManager.LoadAndSave(handler)
 			handler.ServeHTTP(w, r)
 
-			if got := w.Code; got != tt.wantStatus {
-				t.Errorf("CreateCartHandler() status = %v, want %v", got, tt.wantStatus)
-			}
+			s.Equal(tt.wantStatus, w.Code)
 
 			if tt.wantResponse != nil {
 				var response api.CartResponse
 				err := json.NewDecoder(w.Body).Decode(&response)
-				if err != nil {
-					t.Fatalf("Failed to decode response: %v", err)
-				}
+				s.Require().NoError(err, "Failed to decode response")
 
 				cmpOpts := cmpopts.IgnoreFields(api.Cart{}, "CartId")
-				if diff := cmp.Diff(tt.wantResponse, &response, cmpOpts); diff != "" {
-					t.Errorf("CreateCartHandler() response mismatch (-want +got):\n%s", diff)
-				}
+				diff := cmp.Diff(tt.wantResponse, &response, cmpOpts)
+				s.Empty(diff, "Response mismatch (-want +got):\n%s", diff)
 			}
 
-			checkErrorResponse(t, w, struct {
+			checkErrorResponse(s.T(), w, struct {
 				wantStatus     int
 				wantErrMessage string
 			}{

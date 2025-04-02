@@ -5,54 +5,58 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/mock"
 )
 
 type MockRedisClient struct {
+	mock.Mock
 	redis.Cmdable
-
-	GetFunc        func(ctx context.Context, key string) *redis.StringCmd
-	TxPipelineFunc func() redis.Pipeliner
-	DelFunc        func(ctx context.Context, keys ...string) *redis.IntCmd
-	SRemFunc       func(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 }
 
 func (m *MockRedisClient) Get(ctx context.Context, key string) *redis.StringCmd {
-	return m.GetFunc(ctx, key)
+	args := m.Called(ctx, key)
+	return args.Get(0).(*redis.StringCmd)
 }
 
 func (m *MockRedisClient) TxPipeline() redis.Pipeliner {
-	return m.TxPipelineFunc()
+	args := m.Called()
+	return args.Get(0).(redis.Pipeliner)
 }
 
 func (m *MockRedisClient) Del(ctx context.Context, keys ...string) *redis.IntCmd {
-	return m.DelFunc(ctx, keys...)
+	args := m.Called(ctx, keys)
+	return args.Get(0).(*redis.IntCmd)
 }
 
 func (m *MockRedisClient) SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
-	return m.SRemFunc(ctx, key, members...)
+	args := m.Called(ctx, key, members)
+	return args.Get(0).(*redis.IntCmd)
 }
 
 type MockTxPipeline struct {
+	mock.Mock
 	redis.Pipeliner
-
-	SetNXFunc func(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd
-	SetFunc   func(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	SAddFunc  func(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
-	ExecFunc  func(ctx context.Context) ([]redis.Cmder, error)
 }
 
-func (p *MockTxPipeline) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
-	return p.SetNXFunc(ctx, key, value, expiration)
+func (m *MockTxPipeline) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.BoolCmd {
+	args := m.Called(ctx, key, value, expiration)
+	return args.Get(0).(*redis.BoolCmd)
 }
 
-func (p *MockTxPipeline) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
-	return p.SetFunc(ctx, key, value, expiration)
+func (m *MockTxPipeline) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+	args := m.Called(ctx, key, value, expiration)
+	return args.Get(0).(*redis.StatusCmd)
 }
 
-func (p *MockTxPipeline) SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
-	return p.SAddFunc(ctx, key, members...)
+func (m *MockTxPipeline) SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
+	args := m.Called(ctx, key, members)
+	return args.Get(0).(*redis.IntCmd)
 }
 
-func (p *MockTxPipeline) Exec(ctx context.Context) ([]redis.Cmder, error) {
-	return p.ExecFunc(ctx)
+func (m *MockTxPipeline) Exec(ctx context.Context) ([]redis.Cmder, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]redis.Cmder), args.Error(1)
 }
