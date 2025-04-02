@@ -153,8 +153,8 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 					Seats: testSeats[:1],
 				}, nil)
 			},
-			wantStatus:     http.StatusBadRequest,
-			wantErrMessage: "the provided seat IDs don't match the available seats for the showtime",
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
 		},
 		{
 			name:       "should handle concurrent seat locking failures",

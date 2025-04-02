@@ -35,7 +35,7 @@ func (p *PostgresSeatRepository) GetSeatsByShowtime(ctx context.Context, showtim
 			ON sh.hall_id = h.id
 		JOIN theaters t
 			ON h.theater_id = t.id
-		WHERE sh.id = $1
+		WHERE sh.id = $1 AND sh.start_time > NOW()
 		ORDER BY se.seat_row, se.seat_col
 	`
 
@@ -86,7 +86,7 @@ func (p *PostgresSeatRepository) GetSeatsByShowtimeAndSeatIds(
 		FROM showtimes sh
 		JOIN seats se
 			ON se.hall_id = sh.hall_id
-		WHERE sh.id = $1 AND se.id = ANY($2::int[]);
+		WHERE sh.id = $1 AND se.id = ANY($2::int[]) AND sh.start_time > NOW();
 	`
 
 	rows, err := p.db.Query(ctx, query, showtimeID, seatIDs)

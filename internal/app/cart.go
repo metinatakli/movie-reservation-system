@@ -61,7 +61,7 @@ func (app *application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	if len(seatIds) != len(showtimeSeats.Seats) {
-		app.badRequestResponse(w, r, fmt.Errorf("the provided seat IDs don't match the available seats for the showtime"))
+		app.notFoundResponse(w, r)
 		return
 	}
 
