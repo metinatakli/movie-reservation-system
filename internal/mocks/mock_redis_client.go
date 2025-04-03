@@ -59,6 +59,16 @@ func (m *MockTxPipeline) SAdd(ctx context.Context, key string, members ...interf
 	return args.Get(0).(*redis.IntCmd)
 }
 
+func (m *MockTxPipeline) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	args := m.Called(ctx, keys)
+	return args.Get(0).(*redis.IntCmd)
+}
+
+func (m *MockTxPipeline) SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
+	args := m.Called(ctx, key, members)
+	return args.Get(0).(*redis.IntCmd)
+}
+
 func (m *MockTxPipeline) Exec(ctx context.Context) ([]redis.Cmder, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {

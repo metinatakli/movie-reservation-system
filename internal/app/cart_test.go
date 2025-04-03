@@ -25,6 +25,27 @@ const (
 	testShowtimeID = 1
 	testBasePrice  = 50.0
 	maxSeats       = 8
+	cartID         = "testCartId"
+	cartDataStr    = `{
+		"ShowtimeID": 1,
+		"TotalPrice": "49.99",
+		"Seats": [
+			{
+				"Id": 1,
+				"Row": 5,
+				"Col": 7,
+				"SeatType": "VIP",
+				"ExtraPrice": "10.00"
+			},
+			{
+				"Id": 2,
+				"Row": 5,
+				"Col": 8,
+				"SeatType": "Standard",
+				"ExtraPrice": "5.00"
+			}
+  		]
+	}`
 )
 
 var (
@@ -287,6 +308,131 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				diff := cmp.Diff(tt.wantResponse, &response, cmpOpts)
 				s.Empty(diff, "Response mismatch (-want +got):\n%s", diff)
 			}
+
+			checkErrorResponse(s.T(), w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func (s *CartTestSuite) TestDeleteCartHandler() {
+	tests := []struct {
+		name           string
+		showtimeID     int
+		setupMocks     func()
+		wantStatus     int
+		wantErrMessage string
+	}{
+		{
+			name:           "should fail when showtime ID is zero or negative",
+			showtimeID:     0,
+			wantStatus:     http.StatusBadRequest,
+			wantErrMessage: "showtime ID must be greater than zero",
+		},
+		{
+			name:       "should fail when Redis get operation for retrieving cartId fails",
+			showtimeID: testShowtimeID,
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult("", fmt.Errorf("redis get operation failed")))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:       "should fail when there is no cart bound to the current session",
+			showtimeID: testShowtimeID,
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult("", redis.Nil))
+			},
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+		{
+			name:       "should fail when Redis get operation for retrieving cart data fails",
+			showtimeID: testShowtimeID,
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult(cartID, nil)).Once()
+				s.redisClient.On("Get", mock.Anything, cartID).Return(redis.NewStringResult("", fmt.Errorf("redis get operation failed"))).Once()
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:       "should fail when sent showtimeID is not matched with the cart's showtimeID",
+			showtimeID: 2,
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult(cartID, nil)).Once()
+				s.redisClient.On("Get", mock.Anything, cartID).Return(redis.NewStringResult(cartDataStr, nil)).Once()
+			},
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+		{
+			name:       "should fail when Redis pipeline responsible for deleting cart and seat related data fails",
+			showtimeID: testShowtimeID,
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult(cartID, nil)).Once()
+				s.redisClient.On("Get", mock.Anything, cartID).Return(redis.NewStringResult(cartDataStr, nil)).Once()
+				s.redisClient.On("TxPipeline", mock.Anything, mock.Anything).Return(s.redisPipeline)
+
+				s.redisPipeline.On("Del", mock.Anything, seatLockKey(testShowtimeID, 1)).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("Del", mock.Anything, seatLockKey(testShowtimeID, 2)).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("SRem", mock.Anything, seatSetKey(testShowtimeID), []interface{}{1}).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("SRem", mock.Anything, seatSetKey(testShowtimeID), []interface{}{2}).Return(redis.NewIntResult(1, nil))
+
+				s.redisPipeline.On("Del", mock.Anything, cartID).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("Del", mock.Anything, mock.Anything).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{}, fmt.Errorf("Redis pipeline execution failed"))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:       "should delete cart and seat related data successfully with valid input",
+			showtimeID: testShowtimeID,
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult(cartID, nil)).Once()
+				s.redisClient.On("Get", mock.Anything, cartID).Return(redis.NewStringResult(cartDataStr, nil)).Once()
+				s.redisClient.On("TxPipeline", mock.Anything, mock.Anything).Return(s.redisPipeline)
+
+				s.redisPipeline.On("Del", mock.Anything, seatLockKey(testShowtimeID, 1)).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("Del", mock.Anything, seatLockKey(testShowtimeID, 2)).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("SRem", mock.Anything, seatSetKey(testShowtimeID), []interface{}{1}).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("SRem", mock.Anything, seatSetKey(testShowtimeID), []interface{}{2}).Return(redis.NewIntResult(1, nil))
+
+				s.redisPipeline.On("Del", mock.Anything, cartID).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("Del", mock.Anything, mock.Anything).Return(redis.NewIntResult(1, nil))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{}, nil)
+			},
+			wantStatus: http.StatusNoContent,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.SetupTest()
+
+			defer s.redisClient.AssertExpectations(s.T())
+
+			if tt.setupMocks != nil {
+				tt.setupMocks()
+			}
+
+			w, r := executeRequest(s.T(), http.MethodDelete, fmt.Sprintf("/showtimes/%d/cart", tt.showtimeID), nil)
+			r = setupTestSession(s.T(), s.app, r, 1)
+
+			handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.app.DeleteCartHandler(w, r, tt.showtimeID)
+			}))
+			handler = s.app.sessionManager.LoadAndSave(handler)
+			handler.ServeHTTP(w, r)
+
+			s.Equal(tt.wantStatus, w.Code)
 
 			checkErrorResponse(s.T(), w, struct {
 				wantStatus     int

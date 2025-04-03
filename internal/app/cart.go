@@ -280,3 +280,60 @@ func seatLockKey(showtimeID, seatID int) string {
 func seatSetKey(showtimeID int) string {
 	return fmt.Sprintf("seat_locks:%d", showtimeID)
 }
+
+func (app *application) DeleteCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
+	if showtimeID < 1 {
+		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
+		return
+	}
+
+	sessionID := app.sessionManager.Token(r.Context())
+
+	cartId, err := app.redis.Get(r.Context(), cartSessionKey(sessionID)).Result()
+	if err != nil && err != redis.Nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if cartId == "" {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	cartBytes, err := app.redis.Get(r.Context(), cartId).Bytes()
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	var cart Cart
+
+	err = json.Unmarshal(cartBytes, &cart)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if cart.ShowtimeID != showtimeID {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	pipe := app.redis.TxPipeline()
+
+	for _, seat := range cart.Seats {
+		pipe.Del(r.Context(), seatLockKey(showtimeID, seat.Id))
+		pipe.SRem(r.Context(), seatSetKey(showtimeID), seat.Id)
+	}
+
+	pipe.Del(r.Context(), cartId)
+	pipe.Del(r.Context(), cartSessionKey(sessionID))
+
+	_, err = pipe.Exec(r.Context())
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

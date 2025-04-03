@@ -599,6 +599,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - showtimes
+      operationId: deleteCartHandler
+      summary: Deletes the cart associated with the current session for the given showtime
+      parameters:
+        - in: path
+          name: showtime_id
+          schema:
+            type: integer
+            minimum: 1
+          required: true
+          description: The ID of the showtime for which the cart is being deleted
+      responses:
+        '204':
+          description: Cart deleted successfully
+        '404':
+          description: Cart not found for the current session or given showtime
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     ErrorResponse:
