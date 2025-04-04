@@ -33,10 +33,10 @@ func newTestApplication(opts ...func(*application)) *application {
 func setupTestSession(t *testing.T, app *application, r *http.Request, userId int) *http.Request {
 	ctx, err := app.sessionManager.Load(r.Context(), "session")
 	if err != nil {
-		t.Fatalf("Failed to load session: %v", err)
+		t.Errorf("Failed to load session: %v", err)
 	}
 
-	app.sessionManager.Put(ctx, SessionKeyUserId, userId)
+	app.sessionManager.Put(ctx, SessionKeyUserId.String(), userId)
 
 	return r.WithContext(ctx)
 }

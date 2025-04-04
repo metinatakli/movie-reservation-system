@@ -207,13 +207,13 @@ func (app *application) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app.sessionManager.Put(r.Context(), SessionKeyUserId, user.ID)
+	app.sessionManager.Put(r.Context(), SessionKeyUserId.String(), user.ID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (app *application) Logout(w http.ResponseWriter, r *http.Request) {
-	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 	if userId == 0 {
 		app.notFoundResponse(w, r)
 		return

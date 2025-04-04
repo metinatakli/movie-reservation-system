@@ -253,5 +253,19 @@ func (app *application) routes() http.Handler {
 	r.Use(app.sessionManager.LoadAndSave)
 	r.Use(app.ensureGuestUserSession)
 
-	return api.HandlerFromMux(app, r)
+	h := api.HandlerFromMux(app, r)
+
+	r.Mount("/", h)
+
+	r.With(app.requireAuthentication).Route("/users/me", func(r chi.Router) {
+		r.Get("/", app.GetCurrentUser)
+		r.Patch("/", app.UpdateUser)
+	})
+
+	r.With(app.requireAuthentication).Route("/users/me/deletion-request", func(r chi.Router) {
+		r.Post("/", app.InitiateUserDeletion)
+		r.Put("/", app.CompleteUserDeletion)
+	})
+
+	return r
 }

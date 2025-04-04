@@ -61,8 +61,8 @@ func TestGetUsersMe(t *testing.T) {
 		{
 			name:           "no session",
 			setupSession:   false,
-			wantStatus:     http.StatusNotFound,
-			wantErrMessage: ErrNotFound,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrUnauthorizedAccess,
 		},
 		{
 			name:         "user not found",
@@ -101,7 +101,8 @@ func TestGetUsersMe(t *testing.T) {
 				r = setupTestSession(t, app, r, tt.userId)
 			}
 
-			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.GetCurrentUser))
+			handler := app.requireAuthentication(http.HandlerFunc(app.GetCurrentUser))
+			handler = app.sessionManager.LoadAndSave(handler)
 			handler.ServeHTTP(w, r)
 
 			if got := w.Code; got != tt.wantStatus {
@@ -185,8 +186,8 @@ func TestUpdateUser(t *testing.T) {
 		{
 			name:           "no session",
 			setupSession:   false,
-			wantStatus:     http.StatusNotFound,
-			wantErrMessage: ErrNotFound,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrUnauthorizedAccess,
 		},
 		{
 			name:         "user not found",
@@ -285,7 +286,8 @@ func TestUpdateUser(t *testing.T) {
 				r = setupTestSession(t, app, r, tt.userId)
 			}
 
-			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.UpdateUser))
+			handler := app.requireAuthentication(http.HandlerFunc(app.UpdateUser))
+			handler = app.sessionManager.LoadAndSave(handler)
 			handler.ServeHTTP(w, r)
 
 			if got := w.Code; got != tt.wantStatus {
@@ -437,7 +439,8 @@ func TestInitiateUserDeletion(t *testing.T) {
 				r = setupTestSession(t, app, r, tt.userId)
 			}
 
-			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.InitiateUserDeletion))
+			handler := app.requireAuthentication(http.HandlerFunc(app.InitiateUserDeletion))
+			handler = app.sessionManager.LoadAndSave(handler)
 			handler.ServeHTTP(w, r)
 
 			if got := w.Code; got != tt.wantStatus {
@@ -593,7 +596,8 @@ func TestCompleteUserDeletion(t *testing.T) {
 				r = setupTestSession(t, app, r, tt.userId)
 			}
 
-			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.CompleteUserDeletion))
+			handler := app.requireAuthentication(http.HandlerFunc(app.CompleteUserDeletion))
+			handler = app.sessionManager.LoadAndSave(handler)
 			handler.ServeHTTP(w, r)
 
 			if got := w.Code; got != tt.wantStatus {
@@ -601,7 +605,7 @@ func TestCompleteUserDeletion(t *testing.T) {
 			}
 
 			if http.StatusNoContent == w.Code {
-				userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+				userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 				if userId != 0 {
 					t.Error("Session was not destroyed")
 				}

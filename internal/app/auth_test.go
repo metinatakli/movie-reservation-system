@@ -421,7 +421,7 @@ func TestLogin(t *testing.T) {
 					t.Fatalf("Failed to load session: %v", err)
 				}
 
-				userId := app.sessionManager.GetInt(ctx, SessionKeyUserId)
+				userId := app.sessionManager.GetInt(ctx, SessionKeyUserId.String())
 
 				if userId != 1 {
 					t.Errorf("Expected userId=1 in session, got %v", userId)
@@ -479,7 +479,7 @@ func TestLogout(t *testing.T) {
 			}
 
 			if tt.setupSession {
-				userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
+				userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 				if userId != 0 {
 					t.Error("Session was not destroyed")
 				}

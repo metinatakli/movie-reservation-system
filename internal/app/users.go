@@ -14,11 +14,7 @@ import (
 )
 
 func (app *application) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
-	if userId == 0 {
-		app.notFoundResponse(w, r)
-		return
-	}
+	userId := app.contextGetUserId(r)
 
 	user, err := app.userRepo.GetById(r.Context(), userId)
 	if err != nil {
@@ -52,12 +48,6 @@ func (app *application) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) UpdateUser(w http.ResponseWriter, r *http.Request) {
-	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
-	if userId == 0 {
-		app.notFoundResponse(w, r)
-		return
-	}
-
 	var input api.UpdateUserRequest
 
 	err := app.readJSON(w, r, &input)
@@ -71,6 +61,8 @@ func (app *application) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		app.failedValidationResponse(w, r, err)
 		return
 	}
+
+	userId := app.contextGetUserId(r)
 
 	user, err := app.userRepo.GetById(r.Context(), userId)
 	if err != nil {
@@ -128,12 +120,6 @@ func (app *application) UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Request) {
-	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
-	if userId == 0 {
-		app.unauthorizedAccessResponse(w, r)
-		return
-	}
-
 	var input api.InitiateUserDeletionRequest
 
 	err := app.readJSON(w, r, &input)
@@ -147,6 +133,8 @@ func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 		app.invalidCredentialsResponse(w, r)
 		return
 	}
+
+	userId := app.contextGetUserId(r)
 
 	user, err := app.userRepo.GetById(r.Context(), userId)
 	if err != nil {
@@ -200,12 +188,6 @@ func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 }
 
 func (app *application) CompleteUserDeletion(w http.ResponseWriter, r *http.Request) {
-	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId)
-	if userId == 0 {
-		app.unauthorizedAccessResponse(w, r)
-		return
-	}
-
 	var input api.CompleteUserDeletionRequest
 
 	err := app.readJSON(w, r, &input)
@@ -232,6 +214,8 @@ func (app *application) CompleteUserDeletion(w http.ResponseWriter, r *http.Requ
 
 		return
 	}
+
+	userId := app.contextGetUserId(r)
 
 	if user.ID != userId {
 		app.logger.Error("unauthorized user deletion attempt",
