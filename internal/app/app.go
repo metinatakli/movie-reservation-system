@@ -35,7 +35,7 @@ type application struct {
 	config         config
 	logger         *slog.Logger
 	db             *pgxpool.Pool
-	redis          redis.Cmdable
+	redis          redis.UniversalClient
 	validator      *validator.Validate
 	mailer         mailer.Mailer
 	sessionManager *scs.SessionManager

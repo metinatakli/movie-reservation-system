@@ -10,7 +10,7 @@ import (
 
 type MockRedisClient struct {
 	mock.Mock
-	redis.Cmdable
+	redis.UniversalClient
 }
 
 func (m *MockRedisClient) Get(ctx context.Context, key string) *redis.StringCmd {
