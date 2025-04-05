@@ -14,6 +14,9 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
 	"github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/oapi-codegen/runtime/types"
+	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -303,32 +306,49 @@ func TestActivateUser(t *testing.T) {
 	}
 }
 
-func TestLogin(t *testing.T) {
+// TODO: rewrite auth_test.go using testify
+type LoginTestSuite struct {
+	suite.Suite
+	app           *application
+	redisClient   *mocks.MockRedisClient
+	redisPipeline *mocks.MockTxPipeline
+}
+
+func (s *LoginTestSuite) SetupTest() {
+	s.redisClient = new(mocks.MockRedisClient)
+	s.redisPipeline = new(mocks.MockTxPipeline)
+
+	s.app = newTestApplication(func(a *application) {
+		a.redis = s.redisClient
+		a.sessionManager = scs.New()
+	})
+}
+
+func TestLoginSuite(t *testing.T) {
+	suite.Run(t, new(LoginTestSuite))
+}
+
+func (s *LoginTestSuite) TestLogin() {
 	tests := []struct {
 		name           string
 		input          api.LoginRequest
 		getByEmailFunc func(context.Context, string) (*domain.User, error)
+		setupMocks     func()
+		setupSession   bool
 		password       string
 		wantStatus     int
 		wantErrMessage string
+		wantResponse   *api.AlreadyLoggedInResponse
 	}{
 		{
-			name: "successful login",
+			name: "user already is logged in",
 			input: api.LoginRequest{
 				Email:    "freddie@example.com",
 				Password: "Pass123!@#",
 			},
-			password: "Pass123!@#",
-			getByEmailFunc: func(ctx context.Context, email string) (*domain.User, error) {
-				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Pass123!@#"), 12)
-				user := &domain.User{}
-
-				user.ID = 1
-				user.Password.Hash = hashedPassword
-
-				return user, nil
-			},
-			wantStatus: http.StatusNoContent,
+			setupSession: true,
+			wantStatus:   http.StatusOK,
+			wantResponse: &api.AlreadyLoggedInResponse{Message: "You are already logged in"},
 		},
 		{
 			name: "invalid password format",
@@ -382,53 +402,89 @@ func TestLogin(t *testing.T) {
 			wantStatus:     http.StatusInternalServerError,
 			wantErrMessage: ErrInternalServer,
 		},
+		{
+			name: "successful login",
+			input: api.LoginRequest{
+				Email:    "freddie@example.com",
+				Password: "Pass123!@#",
+			},
+			password: "Pass123!@#",
+			getByEmailFunc: func(ctx context.Context, email string) (*domain.User, error) {
+				hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("Pass123!@#"), 12)
+				user := &domain.User{}
+
+				user.ID = 1
+				user.Password.Hash = hashedPassword
+
+				return user, nil
+			},
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult(cartID, nil)).Once()
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult(cartDataStr, nil)).Once()
+				s.redisClient.On("TTL", mock.Anything, mock.Anything).Return(redis.NewDurationResult(2*time.Minute, nil))
+				s.redisClient.On("Watch", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+				s.redisClient.On("TxPipeline").Return(s.redisPipeline)
+				s.redisPipeline.On("Expire", mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolResult(true, nil))
+				s.redisPipeline.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewStatusResult("OK", nil))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{}, nil)
+			},
+			wantStatus: http.StatusNoContent,
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
-				a.userRepo = &mocks.MockUserRepo{
-					GetByEmailFunc: tt.getByEmailFunc,
-				}
-				a.sessionManager = scs.New()
-			})
+		s.Run(tt.name, func() {
+			s.SetupTest()
+			s.app.userRepo = &mocks.MockUserRepo{
+				GetByEmailFunc: tt.getByEmailFunc,
+			}
 
-			w, r := executeRequest(t, http.MethodPost, "/sessions", tt.input)
+			defer s.redisClient.AssertExpectations(s.T())
+			defer s.redisPipeline.AssertExpectations(s.T())
 
-			handler := app.sessionManager.LoadAndSave(http.HandlerFunc(app.Login))
+			if tt.setupMocks != nil {
+				tt.setupMocks()
+			}
+
+			w, r := executeRequest(s.T(), http.MethodPost, "/sessions", tt.input)
+
+			if tt.setupSession {
+				r = setupTestSession(s.T(), s.app, r, 1)
+			}
+
+			handler := s.app.sessionManager.LoadAndSave(http.HandlerFunc(s.app.Login))
 			handler.ServeHTTP(w, r)
 
-			if got := w.Code; got != tt.wantStatus {
-				t.Errorf("Login() status = %v, want %v", got, tt.wantStatus)
-			}
+			s.Equal(tt.wantStatus, w.Code)
 
 			if tt.wantStatus == http.StatusNoContent {
 				var sessionCookie *http.Cookie
 				for _, cookie := range w.Result().Cookies() {
-					if cookie.Name == app.sessionManager.Cookie.Name {
+					if cookie.Name == s.app.sessionManager.Cookie.Name {
 						sessionCookie = cookie
 						break
 					}
 				}
 
 				if sessionCookie == nil {
-					t.Fatal("No session cookie found in response")
+					s.T().Fatal("No session cookie found in response")
 					return
 				}
 
-				ctx, err := app.sessionManager.Load(r.Context(), sessionCookie.Value)
+				ctx, err := s.app.sessionManager.Load(r.Context(), sessionCookie.Value)
 				if err != nil {
-					t.Fatalf("Failed to load session: %v", err)
+					s.T().Fatalf("Failed to load session: %v", err)
 				}
 
-				userId := app.sessionManager.GetInt(ctx, SessionKeyUserId.String())
+				userId := s.app.sessionManager.GetInt(ctx, SessionKeyUserId.String())
 
 				if userId != 1 {
-					t.Errorf("Expected userId=1 in session, got %v", userId)
+					s.T().Errorf("Expected userId=1 in session, got %v", userId)
 				}
 			}
 
-			checkErrorResponse(t, w, struct {
+			checkErrorResponse(s.T(), w, struct {
 				wantStatus     int
 				wantErrMessage string
 			}{

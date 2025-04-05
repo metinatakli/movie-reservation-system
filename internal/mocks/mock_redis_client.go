@@ -39,6 +39,16 @@ func (m *MockRedisClient) EvalSha(ctx context.Context, sha1 string, keys []strin
 	return result.Get(0).(*redis.Cmd)
 }
 
+func (m *MockRedisClient) TTL(ctx context.Context, key string) *redis.DurationCmd {
+	args := m.Called(ctx, key)
+	return args.Get(0).(*redis.DurationCmd)
+}
+
+func (m *MockRedisClient) Watch(ctx context.Context, fn func(*redis.Tx) error, keys ...string) error {
+	args := m.Called(ctx, fn, keys)
+	return args.Error(0)
+}
+
 type MockTxPipeline struct {
 	mock.Mock
 	redis.Pipeliner
@@ -75,4 +85,9 @@ func (m *MockTxPipeline) Exec(ctx context.Context) ([]redis.Cmder, error) {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]redis.Cmder), args.Error(1)
+}
+
+func (m *MockTxPipeline) Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd {
+	args := m.Called(ctx, key, expiration)
+	return args.Get(0).(*redis.BoolCmd)
 }

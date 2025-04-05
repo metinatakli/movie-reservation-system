@@ -167,6 +167,20 @@ func (app *application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) Login(w http.ResponseWriter, r *http.Request) {
+	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
+	if userId != 0 {
+		resp := api.AlreadyLoggedInResponse{
+			Message: "You are already logged in",
+		}
+
+		err := app.writeJSON(w, http.StatusOK, resp, nil)
+		if err != nil {
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
 	var input api.LoginRequest
 
 	err := app.readJSON(w, r, &input)
@@ -199,12 +213,25 @@ func (app *application) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldSessionId := app.sessionManager.Token(r.Context())
+
 	// To help prevent session fixation attacks we should renew the session token after any privilege level change.
 	// https://github.com/OWASP/CheatSheetSeries/blob/master/cheatsheets/Session_Management_Cheat_Sheet.md#renew-the-session-id-after-any-privilege-level-change
 	err = app.sessionManager.RenewToken(r.Context())
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
+	}
+
+	newSessionId := app.sessionManager.Token(r.Context())
+	err = app.migrateSessionData(r.Context(), oldSessionId, newSessionId)
+	if err != nil {
+		app.logger.Error(
+			"failed to migrate session data",
+			"error", err,
+			"oldSessionId", oldSessionId,
+			"newSessionId", newSessionId,
+		)
 	}
 
 	app.sessionManager.Put(r.Context(), SessionKeyUserId.String(), user.ID)

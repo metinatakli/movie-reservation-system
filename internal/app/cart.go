@@ -337,3 +337,89 @@ func (app *application) DeleteCartHandler(w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (app *application) migrateSessionData(ctx context.Context, oldSessionId, newSessionId string) error {
+	cartId, err := app.redis.Get(ctx, cartSessionKey(oldSessionId)).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return fmt.Errorf("failed to get cart ID for session %s: %w", oldSessionId, err)
+	}
+
+	if cartId == "" {
+		return nil
+	}
+
+	var cart Cart
+	cartBytes, err := app.redis.Get(ctx, cartId).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil
+		}
+		return fmt.Errorf("failed to get cart data for session %s: %w", oldSessionId, err)
+	}
+
+	err = json.Unmarshal(cartBytes, &cart)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal cart data for session %s: %w", oldSessionId, err)
+	}
+
+	ttl, err := app.redis.TTL(ctx, cartId).Result()
+	if err != nil {
+		return fmt.Errorf("failed to get TTL for cart ID %s: %w", cartId, err)
+	}
+
+	if ttl <= 0 {
+		// Key either doesn't exist (-2) or is persistent (-1), put for safety
+		return nil
+	}
+
+	newTTL := ttl + 3*time.Minute
+	showtimeId := cart.ShowtimeID
+	lockKeys := make([]string, len(cart.Seats))
+
+	for i, seat := range cart.Seats {
+		lockKeys[i] = seatLockKey(showtimeId, seat.Id)
+	}
+
+	err = app.redis.Watch(ctx, func(tx *redis.Tx) error {
+		for _, lockKey := range lockKeys {
+			sessionId, err := tx.Get(ctx, lockKey).Result()
+			if err != nil && !errors.Is(err, redis.Nil) {
+				return err
+			}
+
+			if sessionId != oldSessionId {
+				return fmt.Errorf("seat doesn't belong to current session")
+			}
+		}
+
+		pipe := tx.TxPipeline()
+
+		for _, lockKey := range lockKeys {
+			pipe.Set(ctx, lockKey, newSessionId, newTTL).Result()
+		}
+
+		_, err := pipe.Exec(ctx)
+
+		return err
+	}, lockKeys...)
+
+	if err != nil {
+		return fmt.Errorf(
+			"failed to migrate seat locks from old session %s to new session %s: %w",
+			oldSessionId,
+			newSessionId,
+			err)
+	}
+
+	pipe := app.redis.TxPipeline()
+
+	pipe.Expire(ctx, cartId, newTTL)
+	pipe.Set(ctx, cartSessionKey(newSessionId), cartId, newTTL)
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to execute Redis pipeline for session migration: %w", err)
+	}
+
+	return nil
+}

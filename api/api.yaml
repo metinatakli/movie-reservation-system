@@ -137,6 +137,12 @@ paths:
               $ref: '#/components/schemas/LoginRequest'
         required: true
       responses:
+        '200':
+          description: User is already logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlreadyLoggedInResponse'
         '204':
           description: User is successfully logged in
         '400':
@@ -826,6 +832,13 @@ components:
           description: "The user's password. Must comply with password requirements."
           x-oapi-codegen-extra-tags:
             validate: "required,password"
+    AlreadyLoggedInResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
     UpdateUserRequest:
       type: object
       properties:
