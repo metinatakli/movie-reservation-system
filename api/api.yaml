@@ -1233,6 +1233,7 @@ components:
         - showtimeId
         - seats
         - holdTime
+        - basePrice
         - totalPrice
       properties:
         cartId:
@@ -1249,6 +1250,13 @@ components:
         holdTime:
           type: integer
           description: "The time (in seconds) until the cart expires or the reservation is confirmed."
+        basePrice:
+          type: string
+          x-go-type: decimal.Decimal
+          x-go-type-import:
+            path: github.com/shopspring/decimal
+            name: Decimal
+          description: "Showtime's base price"
         totalPrice:
           type: string
           x-go-type: decimal.Decimal

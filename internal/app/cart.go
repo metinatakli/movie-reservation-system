@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
@@ -99,6 +98,7 @@ func toApiCart(cart *Cart) api.Cart {
 		ShowtimeId: cart.ShowtimeID,
 		Seats:      toApiCartSeats(cart.Seats),
 		HoldTime:   int(cartTTL.Seconds()),
+		BasePrice:  cart.BasePrice,
 		TotalPrice: cart.TotalPrice,
 	}
 }
@@ -214,6 +214,7 @@ type Cart struct {
 	Id         string `json:"-"`
 	ShowtimeID int
 	TotalPrice decimal.Decimal
+	BasePrice  decimal.Decimal
 	Seats      []CartSeat
 }
 
@@ -228,22 +229,24 @@ type CartSeat struct {
 func createCartObj(showtimeID int, showtimeSeats *domain.ShowtimeSeats) Cart {
 	id := uuid.New().String()
 	seats := toCartSeats(showtimeSeats.Seats)
-	totalPrice := calculateTotalPrice(showtimeSeats.Price, seats)
+	basePrice := decimal.NewFromFloat(toFloat64(showtimeSeats.Price))
+	totalPrice := calculateTotalPrice(basePrice, seats)
 
 	return Cart{
 		Id:         id,
 		ShowtimeID: showtimeID,
 		TotalPrice: totalPrice,
+		BasePrice:  basePrice,
 		Seats:      seats,
 	}
 }
 
-func calculateTotalPrice(basePrice pgtype.Numeric, cartSeats []CartSeat) decimal.Decimal {
-	baseFloat := toFloat64(basePrice)
-	total := decimal.NewFromFloat(baseFloat)
+func calculateTotalPrice(basePrice decimal.Decimal, cartSeats []CartSeat) decimal.Decimal {
+	total := decimal.Zero
 
 	for _, v := range cartSeats {
-		total = total.Add(v.ExtraPrice)
+		seatPrice := basePrice.Add(v.ExtraPrice)
+		total = total.Add(seatPrice)
 	}
 
 	return total
