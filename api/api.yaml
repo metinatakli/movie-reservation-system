@@ -1231,6 +1231,10 @@ components:
       required:
         - cartId
         - showtimeId
+        - movieName
+        - theaterName
+        - hallName
+        - showtimeDate
         - seats
         - holdTime
         - basePrice
@@ -1242,6 +1246,18 @@ components:
         showtimeId:
           type: integer
           description: "The ID of the showtime the user is reserving seats for."
+        movieName:
+          type: string
+          description: "The name of the movie the user is reserving seats for."
+        theaterName:
+          type: string
+          description: "The name of the theater where showtime takes place"
+        hallName:
+          type: string
+          description: "The name of the hall where showtime takes place"
+        showtimeDate:
+          type: string
+          description: "The date of the showtime"
         seats:
           type: array
           items:

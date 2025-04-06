@@ -94,12 +94,16 @@ func (app *application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 
 func toApiCart(cart *Cart) api.Cart {
 	return api.Cart{
-		CartId:     cart.Id,
-		ShowtimeId: cart.ShowtimeID,
-		Seats:      toApiCartSeats(cart.Seats),
-		HoldTime:   int(cartTTL.Seconds()),
-		BasePrice:  cart.BasePrice,
-		TotalPrice: cart.TotalPrice,
+		CartId:       cart.Id,
+		ShowtimeId:   cart.ShowtimeID,
+		MovieName:    cart.MovieName,
+		TheaterName:  cart.TheaterName,
+		HallName:     cart.HallName,
+		ShowtimeDate: cart.Date.Format(time.RFC1123),
+		Seats:        toApiCartSeats(cart.Seats),
+		HoldTime:     int(cartTTL.Seconds()),
+		BasePrice:    cart.BasePrice,
+		TotalPrice:   cart.TotalPrice,
 	}
 }
 
@@ -211,11 +215,15 @@ func (app *application) rollbackSeatLocks(ctx context.Context, showtimeID int, s
 }
 
 type Cart struct {
-	Id         string `json:"-"`
-	ShowtimeID int
-	TotalPrice decimal.Decimal
-	BasePrice  decimal.Decimal
-	Seats      []CartSeat
+	Id          string `json:"-"`
+	ShowtimeID  int
+	TotalPrice  decimal.Decimal
+	BasePrice   decimal.Decimal
+	MovieName   string
+	TheaterName string
+	HallName    string
+	Date        time.Time
+	Seats       []CartSeat
 }
 
 type CartSeat struct {
@@ -233,11 +241,15 @@ func createCartObj(showtimeID int, showtimeSeats *domain.ShowtimeSeats) Cart {
 	totalPrice := calculateTotalPrice(basePrice, seats)
 
 	return Cart{
-		Id:         id,
-		ShowtimeID: showtimeID,
-		TotalPrice: totalPrice,
-		BasePrice:  basePrice,
-		Seats:      seats,
+		Id:          id,
+		ShowtimeID:  showtimeID,
+		TotalPrice:  totalPrice,
+		BasePrice:   basePrice,
+		MovieName:   showtimeSeats.MovieName,
+		TheaterName: showtimeSeats.TheaterName,
+		HallName:    showtimeSeats.HallName,
+		Date:        showtimeSeats.Date,
+		Seats:       seats,
 	}
 }
 

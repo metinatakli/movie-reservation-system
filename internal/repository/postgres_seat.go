@@ -82,10 +82,26 @@ func (p *PostgresSeatRepository) GetSeatsByShowtimeAndSeatIds(
 	seatIDs []int) (*domain.ShowtimeSeats, error) {
 
 	query := `
-		SELECT sh.base_price, se.id, se.seat_row, se.seat_col, se.seat_type, se.extra_price
+		SELECT 
+			t.name,
+			m.title,
+			h.name,
+			sh.base_price,
+			sh.start_time,
+			se.id, 
+			se.seat_row, 
+			se.seat_col, 
+			se.seat_type, 
+			se.extra_price
 		FROM showtimes sh
 		JOIN seats se
 			ON se.hall_id = sh.hall_id
+		JOIN halls h
+			ON h.id = se.hall_id
+		JOIN theaters t
+			ON t.id = h.theater_id
+		JOIN movies m
+			ON m.id = sh.movie_id
 		WHERE sh.id = $1 AND se.id = ANY($2::int[]) AND sh.start_time > NOW();
 	`
 
@@ -101,7 +117,11 @@ func (p *PostgresSeatRepository) GetSeatsByShowtimeAndSeatIds(
 		var seat domain.Seat
 
 		err = rows.Scan(
+			&showtimeSeats.TheaterName,
+			&showtimeSeats.MovieName,
+			&showtimeSeats.HallName,
 			&showtimeSeats.Price,
+			&showtimeSeats.Date,
 			&seat.ID,
 			&seat.Row,
 			&seat.Col,

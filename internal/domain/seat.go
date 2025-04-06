@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -9,6 +10,9 @@ import (
 type ShowtimeSeats struct {
 	TheaterID   int
 	TheaterName string
+	MovieName   string
+	HallName    string
+	Date        time.Time
 	HallID      int
 	Seats       []Seat
 	Price       pgtype.Numeric

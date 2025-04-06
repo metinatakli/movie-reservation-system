@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/google/go-cmp/cmp"
@@ -26,6 +27,9 @@ const (
 	testBasePrice  = 50.0
 	maxSeats       = 8
 	cartID         = "testCartId"
+	hallName       = "Hall Alpha"
+	theaterName    = "Ankara Cinema"
+	movieName      = "Back to the Future"
 	cartDataStr    = `{
 		"ShowtimeID": 1,
 		"TotalPrice": "49.99",
@@ -49,8 +53,9 @@ const (
 )
 
 var (
-	testSeatIDs = []int{1, 2, 3}
-	testSeats   = []domain.Seat{
+	showtimeDate = time.Date(2025, time.April, 6, 14, 0, 0, 0, time.UTC)
+	testSeatIDs  = []int{1, 2, 3}
+	testSeats    = []domain.Seat{
 		{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
 		{ID: 2, Row: 1, Col: 2, Type: "VIP", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(15).BigInt(), Valid: true}},
 		{ID: 3, Row: 1, Col: 3, Type: "Recliner", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(10).BigInt(), Valid: true}},
@@ -247,8 +252,12 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 			setupMocks: func() {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
-					Seats: testSeats,
-					Price: pgtype.Numeric{Int: decimal.NewFromFloat(testBasePrice).BigInt(), Valid: true},
+					Seats:       testSeats,
+					Price:       pgtype.Numeric{Int: decimal.NewFromFloat(testBasePrice).BigInt(), Valid: true},
+					MovieName:   movieName,
+					TheaterName: theaterName,
+					HallName:    hallName,
+					Date:        showtimeDate,
 				}, nil)
 				s.redisClient.On("TxPipeline").Return(s.redisPipeline)
 				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), true))
@@ -269,9 +278,13 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 						{Id: 2, Row: 1, Column: 2, Type: api.VIP, Price: decimal.NewFromFloat(15)},
 						{Id: 3, Row: 1, Column: 3, Type: api.Recliner, Price: decimal.NewFromFloat(10)},
 					},
-					HoldTime:   int(cartTTL.Seconds()),
-					TotalPrice: decimal.NewFromFloat(175),
-					BasePrice:  decimal.NewFromFloat(testBasePrice),
+					HoldTime:     int(cartTTL.Seconds()),
+					TotalPrice:   decimal.NewFromFloat(175),
+					BasePrice:    decimal.NewFromFloat(testBasePrice),
+					MovieName:    movieName,
+					TheaterName:  theaterName,
+					HallName:     hallName,
+					ShowtimeDate: showtimeDate.Format(time.RFC1123),
 				},
 			},
 		},
