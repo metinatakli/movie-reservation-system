@@ -8,11 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
-	"github.com/shopspring/decimal"
 )
 
 const (
@@ -92,7 +90,7 @@ func (app *application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func toApiCart(cart *Cart) api.Cart {
+func toApiCart(cart *domain.Cart) api.Cart {
 	return api.Cart{
 		CartId:       cart.Id,
 		ShowtimeId:   cart.ShowtimeID,
@@ -107,7 +105,7 @@ func toApiCart(cart *Cart) api.Cart {
 	}
 }
 
-func toApiCartSeats(cartSeats []CartSeat) []api.CartSeat {
+func toApiCartSeats(cartSeats []domain.CartSeat) []api.CartSeat {
 	apiCartSeats := make([]api.CartSeat, len(cartSeats))
 
 	for i, v := range cartSeats {
@@ -170,9 +168,9 @@ func (app *application) createCart(
 	seatIDs []int,
 	showtimeID int,
 	sessionID string,
-	showtimeSeats *domain.ShowtimeSeats) (*Cart, error) {
+	showtimeSeats *domain.ShowtimeSeats) (*domain.Cart, error) {
 
-	cart := createCartObj(showtimeID, showtimeSeats)
+	cart := domain.NewCart(showtimeID, showtimeSeats)
 	cartBytes, err := json.Marshal(cart)
 	if err != nil {
 		app.rollbackSeatLocks(ctx, showtimeID, seatIDs)
@@ -214,76 +212,6 @@ func (app *application) rollbackSeatLocks(ctx context.Context, showtimeID int, s
 	}
 }
 
-type Cart struct {
-	Id          string `json:"-"`
-	ShowtimeID  int
-	TotalPrice  decimal.Decimal
-	BasePrice   decimal.Decimal
-	MovieName   string
-	TheaterName string
-	HallName    string
-	Date        time.Time
-	Seats       []CartSeat
-}
-
-type CartSeat struct {
-	Id         int
-	Row        int
-	Col        int
-	SeatType   string
-	ExtraPrice decimal.Decimal
-}
-
-func createCartObj(showtimeID int, showtimeSeats *domain.ShowtimeSeats) Cart {
-	id := uuid.New().String()
-	seats := toCartSeats(showtimeSeats.Seats)
-	basePrice := decimal.NewFromFloat(toFloat64(showtimeSeats.Price))
-	totalPrice := calculateTotalPrice(basePrice, seats)
-
-	return Cart{
-		Id:          id,
-		ShowtimeID:  showtimeID,
-		TotalPrice:  totalPrice,
-		BasePrice:   basePrice,
-		MovieName:   showtimeSeats.MovieName,
-		TheaterName: showtimeSeats.TheaterName,
-		HallName:    showtimeSeats.HallName,
-		Date:        showtimeSeats.Date,
-		Seats:       seats,
-	}
-}
-
-func calculateTotalPrice(basePrice decimal.Decimal, cartSeats []CartSeat) decimal.Decimal {
-	total := decimal.Zero
-
-	for _, v := range cartSeats {
-		seatPrice := basePrice.Add(v.ExtraPrice)
-		total = total.Add(seatPrice)
-	}
-
-	return total
-}
-
-func toCartSeats(seats []domain.Seat) []CartSeat {
-	cartSeats := make([]CartSeat, len(seats))
-
-	for i, seat := range seats {
-		cartSeat := CartSeat{
-			Id:       seat.ID,
-			Row:      seat.Row,
-			Col:      seat.Col,
-			SeatType: seat.Type,
-		}
-
-		priceFloat := toFloat64(seat.ExtraPrice)
-		cartSeat.ExtraPrice = decimal.NewFromFloat(priceFloat)
-
-		cartSeats[i] = cartSeat
-	}
-
-	return cartSeats
-}
-
 func cartSessionKey(sessionID string) string {
 	return fmt.Sprintf("cart:%s", sessionID)
 }
@@ -321,7 +249,7 @@ func (app *application) DeleteCartHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var cart Cart
+	var cart domain.Cart
 
 	err = json.Unmarshal(cartBytes, &cart)
 	if err != nil {
@@ -363,7 +291,7 @@ func (app *application) migrateSessionData(ctx context.Context, oldSessionId, ne
 		return nil
 	}
 
-	var cart Cart
+	var cart domain.Cart
 	cartBytes, err := app.redis.Get(ctx, cartId).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {

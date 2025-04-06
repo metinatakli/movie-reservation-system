@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (app *application) writeJSON(w http.ResponseWriter, status int, data any, headers http.Header) error {
@@ -82,17 +80,4 @@ func (app *application) readJSON(w http.ResponseWriter, r *http.Request, dst any
 	}
 
 	return nil
-}
-
-func toFloat64(numeric pgtype.Numeric) float64 {
-	if !numeric.Valid {
-		return 0.0
-	}
-
-	float64Value, floatErr := numeric.Float64Value()
-	if floatErr != nil {
-		return 0.0
-	}
-
-	return float64Value.Float64
 }
