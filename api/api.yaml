@@ -633,6 +633,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /checkout/session:
+    post:
+      summary: Create Stripe Checkout Session
+      description: |
+        Creates a Stripe Checkout Session using the cart associated with the current session/user.
+        Should be called after the cart has been created and seats reserved.
+      operationId: createCheckoutSessionHandler
+      tags:
+        - Checkout
+      responses:
+        '200':
+          description: Checkout Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+        '401':
+          description: Unauthorized or session expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No cart found for session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Cart is invalid (e.g. expired or seats released)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error while creating checkout session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
@@ -1310,3 +1350,12 @@ components:
             name: Decimal
           description: "The price of the seat."
     
+    CheckoutSessionResponse:
+      type: object
+      required:
+        - redirectUrl
+      properties:
+        redirectUrl:
+          type: string
+          format: uri
+          example: https://checkout.stripe.com/c/pay/cs_test_123abc

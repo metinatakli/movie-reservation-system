@@ -37,6 +37,7 @@ func setupTestSession(t *testing.T, app *application, r *http.Request, userId in
 	}
 
 	app.sessionManager.Put(ctx, SessionKeyUserId.String(), userId)
+	app.sessionManager.Commit(ctx)
 
 	return r.WithContext(ctx)
 }

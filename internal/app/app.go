@@ -21,10 +21,12 @@ import (
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/metinatakli/movie-reservation-system/internal/mailer"
+	"github.com/metinatakli/movie-reservation-system/internal/payment"
 	"github.com/metinatakli/movie-reservation-system/internal/repository"
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 	"github.com/redis/go-redis/v9"
+	"github.com/stripe/stripe-go/v82"
 )
 
 var (
@@ -45,6 +47,9 @@ type application struct {
 	movieRepo   domain.MovieRepository
 	theaterRepo domain.TheaterRepository
 	seatRepo    domain.SeatRepository
+	paymentRepo domain.PaymentRepository
+
+	paymentProvider domain.PaymentProvider
 }
 
 type config struct {
@@ -67,6 +72,11 @@ type config struct {
 		username string
 		password string
 		sender   string
+	}
+	stripe struct {
+		secretKey  string
+		successUrl string
+		failureUrl string
 	}
 }
 
@@ -91,6 +101,10 @@ func Run() error {
 	flag.StringVar(&cfg.smtp.password, "smtp-password", "", "SMTP password")
 	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "CineX <no-reply@cinex.metinatakli.net>", "SMTP sender")
 
+	flag.StringVar(&cfg.stripe.secretKey, "stripe-key", "", "Stripe secret key")
+	flag.StringVar(&cfg.stripe.successUrl, "stripe-success-url", "https://example.com/success.html", "Stripe payment success page")
+	flag.StringVar(&cfg.stripe.failureUrl, "stripe-failure-url", "https://example.com/failure.html", "Stripe payment failure page")
+
 	displayVersion := flag.Bool("version", false, "Display version and exit")
 
 	flag.Parse()
@@ -99,6 +113,8 @@ func Run() error {
 		fmt.Printf("Version:\t%s\n", version)
 		os.Exit(0)
 	}
+
+	stripe.Key = cfg.stripe.secretKey
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -115,6 +131,9 @@ func Run() error {
 	movieRepo := repository.NewPostgresMovieRepository(db)
 	theaterRepo := repository.NewPostgresTheaterRepository(db)
 	seatRepo := repository.NewPostgresSeatRepository(db)
+	paymentRepo := repository.NewPostgresPaymentRepository(db)
+
+	stripeProvider := payment.NewStripePaymentProvider(cfg.stripe.failureUrl, cfg.stripe.successUrl)
 
 	redisClient, err := newRedisClient(cfg)
 	if err != nil {
@@ -123,18 +142,20 @@ func Run() error {
 	defer redisClient.Close()
 
 	app := &application{
-		config:         cfg,
-		logger:         logger,
-		db:             db,
-		redis:          redisClient,
-		validator:      validator,
-		mailer:         mailer.NewSMTPMailer(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
-		sessionManager: newSessionManager(redisClient),
-		userRepo:       userRepo,
-		tokenRepo:      tokenRepo,
-		movieRepo:      movieRepo,
-		theaterRepo:    theaterRepo,
-		seatRepo:       seatRepo,
+		config:          cfg,
+		logger:          logger,
+		db:              db,
+		redis:           redisClient,
+		validator:       validator,
+		mailer:          mailer.NewSMTPMailer(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
+		sessionManager:  newSessionManager(redisClient),
+		userRepo:        userRepo,
+		tokenRepo:       tokenRepo,
+		movieRepo:       movieRepo,
+		theaterRepo:     theaterRepo,
+		seatRepo:        seatRepo,
+		paymentRepo:     paymentRepo,
+		paymentProvider: stripeProvider,
 	}
 
 	return app.run()
@@ -265,6 +286,10 @@ func (app *application) routes() http.Handler {
 	r.With(app.requireAuthentication).Route("/users/me/deletion-request", func(r chi.Router) {
 		r.Post("/", app.InitiateUserDeletion)
 		r.Put("/", app.CompleteUserDeletion)
+	})
+
+	r.With(app.requireAuthentication).Route("/checkout/session", func(r chi.Router) {
+		r.Post("/", app.CreateCheckoutSessionHandler)
 	})
 
 	return r
