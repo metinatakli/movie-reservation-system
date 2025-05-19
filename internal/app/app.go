@@ -42,12 +42,13 @@ type application struct {
 	mailer         mailer.Mailer
 	sessionManager *scs.SessionManager
 
-	userRepo    domain.UserRepository
-	tokenRepo   domain.TokenRepository
-	movieRepo   domain.MovieRepository
-	theaterRepo domain.TheaterRepository
-	seatRepo    domain.SeatRepository
-	paymentRepo domain.PaymentRepository
+	userRepo        domain.UserRepository
+	tokenRepo       domain.TokenRepository
+	movieRepo       domain.MovieRepository
+	theaterRepo     domain.TheaterRepository
+	seatRepo        domain.SeatRepository
+	paymentRepo     domain.PaymentRepository
+	reservationRepo domain.ReservationRepository
 
 	paymentProvider domain.PaymentProvider
 }
@@ -74,9 +75,10 @@ type config struct {
 		sender   string
 	}
 	stripe struct {
-		secretKey  string
-		successUrl string
-		failureUrl string
+		secretKey     string
+		webhookSecret string
+		successUrl    string
+		failureUrl    string
 	}
 }
 
@@ -102,6 +104,7 @@ func Run() error {
 	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "CineX <no-reply@cinex.metinatakli.net>", "SMTP sender")
 
 	flag.StringVar(&cfg.stripe.secretKey, "stripe-key", "", "Stripe secret key")
+	flag.StringVar(&cfg.stripe.webhookSecret, "stripe-webhook-secret", "", "Stripe webhook secret")
 	flag.StringVar(&cfg.stripe.successUrl, "stripe-success-url", "https://example.com/success.html", "Stripe payment success page")
 	flag.StringVar(&cfg.stripe.failureUrl, "stripe-failure-url", "https://example.com/failure.html", "Stripe payment failure page")
 
@@ -132,6 +135,7 @@ func Run() error {
 	theaterRepo := repository.NewPostgresTheaterRepository(db)
 	seatRepo := repository.NewPostgresSeatRepository(db)
 	paymentRepo := repository.NewPostgresPaymentRepository(db)
+	reservationRepo := repository.NewPostgresReservationRepository(db)
 
 	stripeProvider := payment.NewStripePaymentProvider(cfg.stripe.failureUrl, cfg.stripe.successUrl)
 
@@ -155,6 +159,7 @@ func Run() error {
 		theaterRepo:     theaterRepo,
 		seatRepo:        seatRepo,
 		paymentRepo:     paymentRepo,
+		reservationRepo: reservationRepo,
 		paymentProvider: stripeProvider,
 	}
 
@@ -290,6 +295,10 @@ func (app *application) routes() http.Handler {
 
 	r.With(app.requireAuthentication).Route("/checkout/session", func(r chi.Router) {
 		r.Post("/", app.CreateCheckoutSessionHandler)
+	})
+
+	r.Route("/webhook", func(r chi.Router) {
+		r.Post("/", app.StripeWebhookHandler)
 	})
 
 	return r

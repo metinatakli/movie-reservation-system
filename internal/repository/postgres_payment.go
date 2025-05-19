@@ -23,7 +23,7 @@ func (p *PostgresPaymentRepository) Create(ctx context.Context, payment domain.P
 			user_id, 
 			stripe_checkout_session_id, 
 			amount, 
-			currency, 
+			currency,
 			status, 
 			error_message, 
 			payment_date)

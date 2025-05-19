@@ -1,14 +1,24 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"strconv"
 
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
+	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/webhook"
+)
+
+const (
+	maxBodyBytes = int64(65536)
 )
 
 func (app *application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *http.Request) {
@@ -92,4 +102,134 @@ func (app *application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 	}
+}
+
+func (app *application) StripeWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		app.logger.Error("Error reading request body", "error", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	event := stripe.Event{}
+
+	if err := json.Unmarshal(payload, &event); err != nil {
+		app.logger.Error("Webhook error while parsing basic request", "error", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	endpointSecret := app.config.stripe.webhookSecret
+	signatureHeader := r.Header.Get("Stripe-Signature")
+	event, err = webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
+	if err != nil {
+		app.logger.Error("Webhook signature verification failed", "error", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	switch event.Type {
+	case "checkout.session.completed":
+		var session stripe.CheckoutSession
+
+		err := json.Unmarshal(event.Data.Raw, &session)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing webhook JSON: %v\n", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		go app.handleCheckoutSessionCompleted(context.Background(), session)
+	default:
+		fmt.Fprintf(os.Stderr, "Unhandled event type: %s\n", event.Type)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (app *application) handleCheckoutSessionCompleted(
+	ctx context.Context,
+	checkoutSession stripe.CheckoutSession) (err error) {
+
+	defer func() {
+		if err != nil {
+			// TODO: log and handle errors, initiate refund process if server is responsible for the error
+			app.logger.Error("checkout session handling failed", "error", err, "checkoutSessionID", checkoutSession.ID)
+		}
+	}()
+
+	// TODO: code for checking cart ownership logic is duplicated across some handlers, reduce the duplication
+	cartId := checkoutSession.Metadata["cart_id"]
+	cartBytes, err := app.redis.Get(ctx, cartId).Bytes()
+	if err != nil {
+		return err
+	}
+
+	var cart domain.Cart
+
+	err = json.Unmarshal(cartBytes, &cart)
+	if err != nil {
+		return err
+	}
+
+	showtimeId := cart.ShowtimeID
+	sessionId := checkoutSession.Metadata["session_id"]
+	for _, seat := range cart.Seats {
+		ownerSessionId, err := app.redis.Get(ctx, seatLockKey(showtimeId, seat.Id)).Result()
+		if err != nil {
+			return err
+		}
+
+		if ownerSessionId != sessionId {
+			return err
+		}
+	}
+
+	reservationSeats := make([]domain.ReservationSeat, len(cart.Seats))
+	for i, seat := range cart.Seats {
+		reservationSeat := domain.ReservationSeat{
+			ShowtimeID: showtimeId,
+			SeatID:     seat.Id,
+		}
+
+		reservationSeats[i] = reservationSeat
+	}
+
+	userId, err := strconv.Atoi(checkoutSession.Metadata["user_id"])
+	if err != nil || userId == 0 {
+		return fmt.Errorf("user_id is not in the expected format")
+	}
+
+	reservation := domain.Reservation{
+		UserID:            userId,
+		ShowtimeID:        showtimeId,
+		CheckoutSessionID: checkoutSession.ID,
+		ReservationSeats:  reservationSeats,
+	}
+
+	err = app.reservationRepo.Create(ctx, reservation)
+	if err != nil {
+		return err
+	}
+
+	// remove cart and seat locks
+	// TODO: remove duplicated code
+	pipe := app.redis.TxPipeline()
+
+	for _, seat := range cart.Seats {
+		pipe.Del(ctx, seatLockKey(showtimeId, seat.Id))
+		pipe.SRem(ctx, seatSetKey(showtimeId), seat.Id)
+	}
+
+	pipe.Del(ctx, cartId)
+	pipe.Del(ctx, cartSessionKey(sessionId))
+
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
