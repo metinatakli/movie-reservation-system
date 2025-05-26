@@ -17,17 +17,20 @@ import (
 
 type SeatsTestSuite struct {
 	suite.Suite
-	app         *application
-	seatRepo    *mocks.MockSeatRepo
-	redisClient *mocks.MockRedisClient
+	app             *application
+	seatRepo        *mocks.MockSeatRepo
+	reservationRepo *mocks.MockReservationRepo
+	redisClient     *mocks.MockRedisClient
 }
 
 func (s *SeatsTestSuite) SetupTest() {
 	s.seatRepo = new(mocks.MockSeatRepo)
+	s.reservationRepo = new(mocks.MockReservationRepo)
 	s.redisClient = new(mocks.MockRedisClient)
 
 	s.app = newTestApplication(func(a *application) {
 		a.seatRepo = s.seatRepo
+		a.reservationRepo = s.reservationRepo
 		a.redis = s.redisClient
 	})
 }
@@ -104,6 +107,14 @@ func (s *SeatsTestSuite) TestGetSeatMapByShowtime() {
 					},
 				}, nil)
 
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        3,
+					},
+				}, nil)
+
 				s.redisClient.On("EvalSha", mock.Anything, mock.Anything, []string{seatSetKey(1)}, mock.Anything).
 					Return(redis.NewCmdResult([]interface{}{"2", "4"}, nil))
 			},
@@ -124,7 +135,7 @@ func (s *SeatsTestSuite) TestGetSeatMapByShowtime() {
 					{
 						Row: 2,
 						Seats: []api.Seat{
-							{Id: 3, Row: 2, Column: 1, Type: api.VIP, Available: true},
+							{Id: 3, Row: 2, Column: 1, Type: api.VIP, Available: false},
 							{Id: 4, Row: 2, Column: 2, Type: api.Recliner, Available: false},
 						},
 					},

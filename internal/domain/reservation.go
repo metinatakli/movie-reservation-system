@@ -24,4 +24,5 @@ type ReservationSeat struct {
 
 type ReservationRepository interface {
 	Create(ctx context.Context, reservation Reservation) error
+	GetSeatsByShowtimeId(ctx context.Context, showtimeId int) ([]ReservationSeat, error)
 }

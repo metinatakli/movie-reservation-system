@@ -82,18 +82,28 @@ func (app *application) updateSeatAvailability(ctx context.Context, showtimeID i
 		return err
 	}
 
-	lockedSeatsMap := make(map[int]bool)
-	seatIds, err := cmd.Int64Slice()
+	lockedSeatIds, err := cmd.Int64Slice()
 	if err != nil {
 		return fmt.Errorf("unexpected Redis response type")
 	}
 
-	for _, seatId := range seatIds {
-		lockedSeatsMap[int(seatId)] = true
+	reservedSeats, err := app.reservationRepo.GetSeatsByShowtimeId(ctx, showtimeID)
+	if err != nil {
+		return err
+	}
+
+	unavailableSeats := make(map[int]bool)
+
+	for _, seatId := range lockedSeatIds {
+		unavailableSeats[int(seatId)] = true
+	}
+
+	for _, reservationSeat := range reservedSeats {
+		unavailableSeats[reservationSeat.SeatID] = true
 	}
 
 	for i := range showtimeSeats.Seats {
-		if lockedSeatsMap[showtimeSeats.Seats[i].ID] {
+		if unavailableSeats[showtimeSeats.Seats[i].ID] {
 			showtimeSeats.Seats[i].Available = false
 		}
 	}

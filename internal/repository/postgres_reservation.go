@@ -93,3 +93,44 @@ func runInTx(ctx context.Context, db *pgxpool.Pool, fn func(tx pgx.Tx) error) er
 
 	return err
 }
+
+func (p *PostgresReservationRepository) GetSeatsByShowtimeId(
+	ctx context.Context,
+	showtimeId int) ([]domain.ReservationSeat, error) {
+
+	query := `
+		SELECT reservation_id, showtime_id, seat_id
+		FROM reservation_seats
+		WHERE showtime_id = $1
+	`
+
+	rows, err := p.db.Query(ctx, query, showtimeId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	reservationSeats := make([]domain.ReservationSeat, 0)
+
+	for rows.Next() {
+		var reservationSeat domain.ReservationSeat
+
+		err = rows.Scan(
+			&reservationSeat.ReservationID,
+			&reservationSeat.ShowtimeID,
+			&reservationSeat.SeatID,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		reservationSeats = append(reservationSeats, reservationSeat)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return reservationSeats, nil
+}
