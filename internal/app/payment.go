@@ -14,6 +14,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
 
@@ -104,6 +105,7 @@ func (app *application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 	}
 }
 
+// TODO: handle idempotency
 func (app *application) StripeWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	payload, err := io.ReadAll(r.Body)
@@ -155,8 +157,29 @@ func (app *application) handleCheckoutSessionCompleted(
 
 	defer func() {
 		if err != nil {
-			// TODO: log and handle errors, initiate refund process if server is responsible for the error
 			app.logger.Error("checkout session handling failed", "error", err, "checkoutSessionID", checkoutSession.ID)
+
+			if checkoutSession.PaymentIntent == nil {
+				app.logger.Error("payment intent is nil, cannot issue refund", "checkoutSessionID", checkoutSession.ID)
+				return
+			}
+
+			refundParams := &stripe.RefundParams{
+				PaymentIntent: stripe.String(checkoutSession.PaymentIntent.ID),
+			}
+
+			refundResp, refundErr := refund.New(refundParams)
+			if refundErr != nil {
+				app.logger.Error("failed to issue refund", "error", refundErr, "checkoutSessionID", checkoutSession.ID)
+				return
+			}
+
+			app.logger.Info("refund issued", "refundID", refundResp.ID, "checkoutSessionID", checkoutSession.ID)
+
+			dbErr := app.paymentRepo.UpdateStatus(ctx, checkoutSession.ID, domain.PaymentStatusRefunded, err.Error())
+			if dbErr != nil {
+				app.logger.Error("failed to save refund status to DB", "error", dbErr, "checkoutSessionID", checkoutSession.ID)
+			}
 		}
 	}()
 

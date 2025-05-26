@@ -31,4 +31,5 @@ type Payment struct {
 
 type PaymentRepository interface {
 	Create(ctx context.Context, payment Payment) error
+	UpdateStatus(ctx context.Context, checkoutSessionID string, status PaymentStatus, errMsg string) error
 }

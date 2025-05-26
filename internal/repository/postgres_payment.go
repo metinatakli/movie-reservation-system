@@ -44,3 +44,18 @@ func (p *PostgresPaymentRepository) Create(ctx context.Context, payment domain.P
 
 	return err
 }
+
+func (p *PostgresPaymentRepository) UpdateStatus(
+	ctx context.Context,
+	checkoutSessionID string,
+	status domain.PaymentStatus,
+	errMsg string) error {
+
+	query := `UPDATE payments
+		SET status = $1, error_message = $2
+		WHERE stripe_checkout_session_id = $3
+	`
+
+	_, err := p.db.Exec(ctx, query, status, errMsg, checkoutSessionID)
+	return err
+}
