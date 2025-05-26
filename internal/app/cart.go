@@ -50,7 +50,26 @@ func (app *application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	reservedSeats, err := app.reservationRepo.GetSeatsByShowtimeId(r.Context(), showtimeID)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	reservedSeatIds := make(map[int]bool, len(reservedSeats))
+	for _, rs := range reservedSeats {
+		reservedSeatIds[rs.SeatID] = true
+	}
+
 	seatIds := input.SeatIdList
+
+	for _, seatID := range seatIds {
+		if reservedSeatIds[seatID] {
+			app.editConflictResponseWithErr(w, r, fmt.Errorf("some of the selected seats are already reserved"))
+			return
+		}
+	}
+
 	showtimeSeats, err := app.seatRepo.GetSeatsByShowtimeAndSeatIds(r.Context(), showtimeID, seatIds)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)

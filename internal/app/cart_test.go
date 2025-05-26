@@ -62,34 +62,24 @@ var (
 	}
 )
 
-type MockSeatRepo struct {
-	mock.Mock
-	domain.SeatRepository
-}
-
-func (m *MockSeatRepo) GetSeatsByShowtimeAndSeatIds(ctx context.Context, showtimeID int, seatIDs []int) (*domain.ShowtimeSeats, error) {
-	args := m.Called(ctx, showtimeID, seatIDs)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.ShowtimeSeats), args.Error(1)
-}
-
 type CartTestSuite struct {
 	suite.Suite
-	app           *application
-	seatRepo      *MockSeatRepo
-	redisClient   *mocks.MockRedisClient
-	redisPipeline *mocks.MockTxPipeline
+	app             *application
+	seatRepo        *mocks.MockSeatRepo
+	reservationRepo *mocks.MockReservationRepo
+	redisClient     *mocks.MockRedisClient
+	redisPipeline   *mocks.MockTxPipeline
 }
 
 func (s *CartTestSuite) SetupTest() {
-	s.seatRepo = new(MockSeatRepo)
+	s.seatRepo = new(mocks.MockSeatRepo)
+	s.reservationRepo = new(mocks.MockReservationRepo)
 	s.redisClient = new(mocks.MockRedisClient)
 	s.redisPipeline = new(mocks.MockTxPipeline)
 
 	s.app = newTestApplication(func(a *application) {
 		a.seatRepo = s.seatRepo
+		a.reservationRepo = s.reservationRepo
 		a.sessionManager = scs.New()
 		a.redis = s.redisClient
 	})
@@ -155,13 +145,52 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 			wantErrMessage: "cannot create new cart if a cart already exists in session",
 		},
 		{
-			name:       "should fail when database error occurs while fetching seats",
+			name:       "should fail when database error occurs while fetching reserved seats",
 			showtimeID: 1,
 			input: api.CreateCartRequest{
 				SeatIdList: testSeatIDs,
 			},
 			setupMocks: func() {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return(nil, fmt.Errorf("database error"))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:       "should fail when some of requested seatIds are already reserved",
+			showtimeID: 1,
+			input: api.CreateCartRequest{
+				SeatIdList: testSeatIDs,
+			},
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        3,
+					},
+				}, nil)
+			},
+			wantStatus:     http.StatusConflict,
+			wantErrMessage: "some of the selected seats are already reserved",
+		},
+		{
+			name:       "should fail when database error occurs while fetching seats by showtime",
+			showtimeID: 1,
+			input: api.CreateCartRequest{
+				SeatIdList: testSeatIDs,
+			},
+			setupMocks: func() {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        4,
+					},
+				}, nil)
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(nil, fmt.Errorf("database error"))
 			},
 			wantStatus:     http.StatusInternalServerError,
@@ -175,6 +204,13 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 			},
 			setupMocks: func() {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        4,
+					},
+				}, nil)
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
 					Seats: testSeats[:1],
 				}, nil)
@@ -190,6 +226,13 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 			},
 			setupMocks: func() {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        4,
+					},
+				}, nil)
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
 					Seats: testSeats,
 				}, nil)
@@ -212,6 +255,13 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 			},
 			setupMocks: func() {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        4,
+					},
+				}, nil)
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
 					Seats: testSeats,
 				}, nil)
@@ -251,6 +301,13 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 			},
 			setupMocks: func() {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringCmd(context.Background(), ""))
+				s.reservationRepo.On("GetSeatsByShowtimeId", mock.Anything, 1).Return([]domain.ReservationSeat{
+					{
+						ReservationID: 1,
+						ShowtimeID:    1,
+						SeatID:        4,
+					},
+				}, nil)
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
 					Seats:       testSeats,
 					Price:       pgtype.Numeric{Int: decimal.NewFromFloat(testBasePrice).BigInt(), Valid: true},
