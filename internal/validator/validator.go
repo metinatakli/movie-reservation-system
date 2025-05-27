@@ -2,6 +2,7 @@ package validator
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"time"
 	"unicode"
@@ -22,6 +23,10 @@ const (
 	ErrInvalidEmail    = "must be a valid email address"
 	ErrMinLength       = "must be at least %s characters long"
 	ErrMaxLength       = "must be at most %s characters long"
+	ErrMinValue        = "must be at least %s"
+	ErrMaxValue        = "must be at most %s"
+	ErrArrayMinLength  = "must contain at least %s items"
+	ErrArrayMaxLength  = "must contain at most %s items"
 	ErrOnlyLetters     = "must contain only letters"
 	ErrAgeCheck        = "must be at least 15 years old"
 	ErrDefaultInvalid  = "is invalid"
@@ -94,9 +99,23 @@ func ValidationMessage(err validator.FieldError) string {
 	case "email":
 		return ErrInvalidEmail
 	case "min":
-		return fmt.Sprintf(ErrMinLength, err.Param())
+		switch err.Kind() {
+		case reflect.String:
+			return fmt.Sprintf(ErrMinLength, err.Param())
+		case reflect.Slice, reflect.Array:
+			return fmt.Sprintf("must contain at least %s items", err.Param())
+		default:
+			return fmt.Sprintf(ErrMinValue, err.Param())
+		}
 	case "max":
-		return fmt.Sprintf(ErrMaxLength, err.Param())
+		switch err.Kind() {
+		case reflect.String:
+			return fmt.Sprintf(ErrMaxLength, err.Param())
+		case reflect.Slice, reflect.Array:
+			return fmt.Sprintf("must contain at most %s items", err.Param())
+		default:
+			return fmt.Sprintf(ErrMaxValue, err.Param())
+		}
 	case "alpha":
 		return ErrOnlyLetters
 	case "age_check":

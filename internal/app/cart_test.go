@@ -112,7 +112,7 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				SeatIdList: []int{},
 			},
 			wantStatus:     http.StatusUnprocessableEntity,
-			wantErrMessage: fmt.Sprintf(validator.ErrMinLength, "1"),
+			wantErrMessage: fmt.Sprintf(validator.ErrArrayMinLength, "1"),
 		},
 		{
 			name:       "should fail when seat IDs contain negative numbers",
@@ -130,7 +130,7 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				SeatIdList: make([]int, maxSeats+1),
 			},
 			wantStatus:     http.StatusUnprocessableEntity,
-			wantErrMessage: fmt.Sprintf(validator.ErrMaxLength, "8"),
+			wantErrMessage: fmt.Sprintf(validator.ErrArrayMaxLength, "8"),
 		},
 		{
 			name:       "should fail when user already has an active cart",

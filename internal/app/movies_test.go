@@ -148,7 +148,7 @@ func TestGetMovies(t *testing.T) {
 			},
 			url:            "/movies?page=-1",
 			wantStatus:     http.StatusUnprocessableEntity,
-			wantErrMessage: fmt.Sprintf(validator.ErrMinLength, "1"),
+			wantErrMessage: fmt.Sprintf(validator.ErrMinValue, "1"),
 		},
 		{
 			name: "validation error - page size too large",
@@ -157,7 +157,7 @@ func TestGetMovies(t *testing.T) {
 			},
 			url:            "/movies?pageSize=1000",
 			wantStatus:     http.StatusUnprocessableEntity,
-			wantErrMessage: fmt.Sprintf(validator.ErrMaxLength, "100"),
+			wantErrMessage: fmt.Sprintf(validator.ErrMaxValue, "100"),
 		},
 		{
 			name: "validation error - invalid sort parameter",
