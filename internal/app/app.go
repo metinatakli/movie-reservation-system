@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -291,6 +292,25 @@ func (app *application) routes() http.Handler {
 	r.With(app.requireAuthentication).Route("/users/me/deletion-request", func(r chi.Router) {
 		r.Post("/", app.InitiateUserDeletion)
 		r.Put("/", app.CompleteUserDeletion)
+	})
+
+	r.With(app.requireAuthentication).Route("/users/me/reservations", func(r chi.Router) {
+		r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			params := api.GetReservationsOfUserHandlerParams{}
+
+			if page := r.URL.Query().Get("page"); page != "" {
+				if pageNum, err := strconv.Atoi(page); err == nil {
+					params.Page = &pageNum
+				}
+			}
+
+			if pageSize := r.URL.Query().Get("pageSize"); pageSize != "" {
+				if pageSizeNum, err := strconv.Atoi(pageSize); err == nil {
+					params.PageSize = &pageSizeNum
+				}
+			}
+			app.GetReservationsOfUserHandler(w, r, params)
+		}))
 	})
 
 	r.With(app.requireAuthentication).Route("/checkout/session", func(r chi.Router) {

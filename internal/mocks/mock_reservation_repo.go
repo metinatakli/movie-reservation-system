@@ -24,3 +24,15 @@ func (m *MockReservationRepo) GetSeatsByShowtimeId(ctx context.Context, showtime
 	}
 	return args.Get(0).([]domain.ReservationSeat), args.Error(1)
 }
+
+func (m *MockReservationRepo) GetReservationsSummariesByUserId(
+	ctx context.Context,
+	userId int,
+	pagination domain.Pagination) ([]domain.ReservationSummary, *domain.Metadata, error) {
+
+	args := m.Called(ctx, userId, pagination)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).([]domain.ReservationSummary), args.Get(1).(*domain.Metadata), args.Error(2)
+}

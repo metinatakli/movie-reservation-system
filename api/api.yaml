@@ -354,6 +354,48 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /users/me/reservations:
+    get:
+      tags:
+       - user
+      summary: Retrieve user's reservations
+      operationId: getReservationsOfUserHandler
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=1,max=500000"
+          description: Page number (starting from 1)
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+          x-oapi-codegen-extra-tags:
+            validate: "omitempty,min=1,max=100"
+          description: Number of results per page (max 100)
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+               $ref: '#/components/schemas/UserReservationsResponse'
+        '403':
+          description: User is not authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /movies:
     get:
       tags:
@@ -1359,3 +1401,53 @@ components:
           type: string
           format: uri
           example: https://checkout.stripe.com/c/pay/cs_test_123abc
+    
+    UserReservationsResponse:
+      type: object
+      required:
+        - reservations
+        - metadata
+      properties:
+        reservations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReservationSummary'
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+
+    ReservationSummary:
+      type: object
+      required:
+        - id
+        - movieTitle
+        - moviePosterUrl
+        - date
+        - theaterName
+        - hallName
+        - createdAt
+      properties:
+        id:
+          type: integer
+          description: Reservation ID
+        movieTitle:
+          type: string
+          description: Title of the reserved movie
+        moviePosterUrl:
+          type: string
+          description: Poster url of the reserved movie
+        date:
+          type: string
+          format: date-time
+          description: Start time of the show
+        theaterName:
+          type: string
+          description: Name of the theater
+        hallName:
+          type: string
+          description: Name of the hall
+        createdAt:
+          type: string
+          format: date-time
+          description: When the reservation was made
+    
+        

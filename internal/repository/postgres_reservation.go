@@ -134,3 +134,66 @@ func (p *PostgresReservationRepository) GetSeatsByShowtimeId(
 
 	return reservationSeats, nil
 }
+
+func (p *PostgresReservationRepository) GetReservationsSummariesByUserId(
+	ctx context.Context,
+	userId int,
+	pagination domain.Pagination) ([]domain.ReservationSummary, *domain.Metadata, error) {
+
+	query := `
+		SELECT
+			COUNT(*) OVER(),
+			r.id,
+			m.title,
+			m.poster_url,
+			s.start_time,
+			t.name,
+			h.name,
+			r.created_at
+		FROM reservations r
+		JOIN showtimes s ON r.showtime_id = s.id
+		JOIN movies m ON s.movie_id = m.id
+		JOIN halls h ON s.hall_id = h.id
+		JOIN theaters t ON h.theater_id = t.id
+		WHERE r.user_id = $1
+		ORDER BY r.created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := p.db.Query(ctx, query, userId, pagination.Limit(), pagination.Offset())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	reservations := make([]domain.ReservationSummary, 0)
+	totalRecords := 0
+
+	for rows.Next() {
+		var reservation domain.ReservationSummary
+
+		err := rows.Scan(
+			&totalRecords,
+			&reservation.ReservationID,
+			&reservation.MovieTitle,
+			&reservation.MoviePosterUrl,
+			&reservation.ShowtimeDate,
+			&reservation.TheaterName,
+			&reservation.HallName,
+			&reservation.CreatedAt,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		reservations = append(reservations, reservation)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	metadata := domain.NewMetadata(totalRecords, pagination.Page, pagination.PageSize)
+
+	return reservations, metadata, nil
+}
