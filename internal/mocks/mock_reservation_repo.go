@@ -36,3 +36,15 @@ func (m *MockReservationRepo) GetReservationsSummariesByUserId(
 	}
 	return args.Get(0).([]domain.ReservationSummary), args.Get(1).(*domain.Metadata), args.Error(2)
 }
+
+func (m *MockReservationRepo) GetByReservationIdAndUserId(
+	ctx context.Context,
+	reservationId,
+	userId int) (*domain.ReservationDetail, error) {
+
+	args := m.Called(ctx, reservationId, userId)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.ReservationDetail), args.Error(1)
+}

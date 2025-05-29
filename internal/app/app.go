@@ -313,6 +313,19 @@ func (app *application) routes() http.Handler {
 		}))
 	})
 
+	// TODO: Search for a better way to handle these middlewares
+	r.With(app.requireAuthentication).Route("/users/me/reservations/{reservationId}", func(r chi.Router) {
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			reservationIdStr := chi.URLParam(r, "reservationId")
+			reservationId, err := strconv.Atoi(reservationIdStr)
+			if err != nil {
+				app.badRequestResponse(w, r, fmt.Errorf("invalid reservation ID"))
+				return
+			}
+			app.GetUserReservationById(w, r, reservationId)
+		})
+	})
+
 	r.With(app.requireAuthentication).Route("/checkout/session", func(r chi.Router) {
 		r.Post("/", app.CreateCheckoutSessionHandler)
 	})

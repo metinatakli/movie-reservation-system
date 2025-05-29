@@ -13,6 +13,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
 	"github.com/metinatakli/movie-reservation-system/internal/validator"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 )
@@ -184,6 +185,154 @@ func (s *ReservationsTestSuite) TestGetReservationsOfUserHandler() {
 
 			if tt.wantResponse != nil {
 				var response api.UserReservationsResponse
+				err := json.NewDecoder(w.Body).Decode(&response)
+				s.Require().NoError(err, "Failed to decode response")
+
+				diff := cmp.Diff(tt.wantResponse, &response)
+				s.Empty(diff, "Response mismatch (-want +got):\n%s", diff)
+			}
+
+			checkErrorResponse(s.T(), w, struct {
+				wantStatus     int
+				wantErrMessage string
+			}{
+				wantStatus:     tt.wantStatus,
+				wantErrMessage: tt.wantErrMessage,
+			})
+		})
+	}
+}
+
+func (s *ReservationsTestSuite) TestGetUserReservationById() {
+	tests := []struct {
+		name           string
+		setupSession   bool
+		userId         int
+		reservationId  int
+		setupMock      func()
+		wantStatus     int
+		wantErrMessage string
+		wantResponse   *api.ReservationDetailResponse
+	}{
+		{
+			name:           "invalid reservation id",
+			setupSession:   true,
+			userId:         1,
+			reservationId:  0,
+			wantStatus:     http.StatusBadRequest,
+			wantErrMessage: "reservation id must be greater than zero",
+		},
+		{
+			name:           "no session",
+			setupSession:   false,
+			reservationId:  1,
+			wantStatus:     http.StatusUnauthorized,
+			wantErrMessage: ErrUnauthorizedAccess,
+		},
+		{
+			name:          "reservation not found",
+			setupSession:  true,
+			userId:        1,
+			reservationId: 1,
+			setupMock: func() {
+				s.reservationRepo.On("GetByReservationIdAndUserId", mock.Anything, 1, 1).
+					Return(nil, domain.ErrRecordNotFound)
+			},
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+		{
+			name:          "database error",
+			setupSession:  true,
+			userId:        1,
+			reservationId: 1,
+			setupMock: func() {
+				s.reservationRepo.On("GetByReservationIdAndUserId", mock.Anything, 1, 1).
+					Return(nil, fmt.Errorf("database error"))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name:          "successful retrieval",
+			setupSession:  true,
+			userId:        1,
+			reservationId: 1,
+			setupMock: func() {
+				s.reservationRepo.On("GetByReservationIdAndUserId", mock.Anything, 1, 1).
+					Return(&domain.ReservationDetail{
+						ReservationSummary: domain.ReservationSummary{
+							ReservationID:  1,
+							MovieTitle:     "The Matrix",
+							MoviePosterUrl: "https://example.com/matrix.jpg",
+							ShowtimeDate:   time.Date(2024, 3, 15, 19, 0, 0, 0, time.UTC),
+							TheaterName:    "Cinema City",
+							HallName:       "Hall 1",
+							CreatedAt:      time.Date(2024, 3, 10, 10, 0, 0, 0, time.UTC),
+						},
+						Seats: []domain.ReservationDetailSeat{
+							{Row: "1", Col: 1, Type: "standard"},
+							{Row: "1", Col: 2, Type: "vip"},
+						},
+						TheaterAmenities: []domain.Amenity{
+							{ID: 1, Name: "Parking", Description: "Free parking available"},
+						},
+						HallAmenities: []domain.Amenity{
+							{ID: 2, Name: "3D Glasses", Description: "3D glasses provided"},
+						},
+						TotalPrice: decimal.NewFromFloat(25.50),
+					}, nil)
+			},
+			wantStatus: http.StatusOK,
+			wantResponse: &api.ReservationDetailResponse{
+				Id:             1,
+				MovieTitle:     "The Matrix",
+				MoviePosterUrl: "https://example.com/matrix.jpg",
+				Date:           time.Date(2024, 3, 15, 19, 0, 0, 0, time.UTC),
+				TheaterName:    "Cinema City",
+				HallName:       "Hall 1",
+				CreatedAt:      time.Date(2024, 3, 10, 10, 0, 0, 0, time.UTC),
+				TotalPrice:     decimal.NewFromFloat(25.50),
+				Seats: []api.ReservationSeat{
+					{Row: "1", Column: 1, Type: "standard"},
+					{Row: "1", Column: 2, Type: "vip"},
+				},
+				TheaterAmenities: &[]api.Amenity{
+					{Id: 1, Name: "Parking", Description: "Free parking available"},
+				},
+				HallAmenities: &[]api.Amenity{
+					{Id: 2, Name: "3D Glasses", Description: "3D glasses provided"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.SetupTest()
+
+			defer s.reservationRepo.AssertExpectations(s.T())
+
+			if tt.setupMock != nil {
+				tt.setupMock()
+			}
+
+			w, r := executeRequest(s.T(), http.MethodGet, fmt.Sprintf("/reservations/%d", tt.reservationId), nil)
+
+			if tt.setupSession {
+				r = setupTestSession(s.T(), s.app, r, tt.userId)
+			}
+
+			handler := s.app.requireAuthentication(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.app.GetUserReservationById(w, r, tt.reservationId)
+			}))
+			handler = s.app.sessionManager.LoadAndSave(handler)
+			handler.ServeHTTP(w, r)
+
+			s.Equal(tt.wantStatus, w.Code)
+
+			if tt.wantResponse != nil {
+				var response api.ReservationDetailResponse
 				err := json.NewDecoder(w.Body).Decode(&response)
 				s.Require().NoError(err, "Failed to decode response")
 

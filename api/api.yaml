@@ -396,6 +396,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /users/me/reservations/{reservation_id}:
+    get:
+      tags:
+        - user
+      summary: Get details of a specific reservation
+      operationId: getUserReservationById
+      parameters:
+        - name: reservation_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Reservation detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationDetailResponse'
+        '403':
+          description: User is not authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /movies:
     get:
       tags:
@@ -1450,4 +1487,67 @@ components:
           format: date-time
           description: When the reservation was made
     
-        
+    ReservationDetailResponse:
+      type: object
+      required:
+        - id
+        - movieTitle
+        - moviePosterUrl
+        - date
+        - theaterName
+        - hallName
+        - createdAt
+        - seats
+        - format
+        - totalPrice
+      properties:
+        id:
+          type: integer
+        movieTitle:
+          type: string
+        moviePosterUrl:
+          type: string
+        date:
+          type: string
+          format: date-time
+        theaterName:
+          type: string
+        hallName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        seats:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReservationSeat'
+        theaterAmenities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+          description: A list of amenities available in the theater.
+        hallAmenities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+          description: A list of amenities available in the hall.
+        totalPrice:
+          type: string
+          x-go-type: decimal.Decimal
+          x-go-type-import:
+            path: github.com/shopspring/decimal
+            name: Decimal
+
+    ReservationSeat:
+      type: object
+      required:
+        - row
+        - column
+        - type
+      properties:
+        row:
+          type: string
+        column:
+          type: integer
+        type:
+          $ref: '#/components/schemas/SeatType'

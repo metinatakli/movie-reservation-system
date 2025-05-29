@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/metinatakli/movie-reservation-system/api"
@@ -72,4 +74,75 @@ func toPagination(params api.GetReservationsOfUserHandlerParams) domain.Paginati
 	}
 
 	return pagination
+}
+
+func (app *application) GetUserReservationById(w http.ResponseWriter, r *http.Request, reservationId int) {
+	if reservationId <= 0 {
+		app.badRequestResponse(w, r, fmt.Errorf("reservation id must be greater than zero"))
+		return
+	}
+
+	userId := app.contextGetUserId(r)
+
+	reservationDetail, err := app.reservationRepo.GetByReservationIdAndUserId(r.Context(), reservationId, userId)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRecordNotFound):
+			app.notFoundResponse(w, r)
+		default:
+			app.serverErrorResponse(w, r, err)
+		}
+
+		return
+	}
+
+	resp := toReservationDetailResponse(reservationDetail)
+
+	err = app.writeJSON(w, http.StatusOK, resp, nil)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+	}
+}
+
+func toReservationDetailResponse(reservationDetail *domain.ReservationDetail) api.ReservationDetailResponse {
+	seats := make([]api.ReservationSeat, len(reservationDetail.Seats))
+	for i, s := range reservationDetail.Seats {
+		seats[i] = api.ReservationSeat{
+			Row:    s.Row,
+			Column: s.Col,
+			Type:   api.SeatType(s.Type),
+		}
+	}
+
+	theaterAmenities := make([]api.Amenity, len(reservationDetail.TheaterAmenities))
+	for i, a := range reservationDetail.TheaterAmenities {
+		theaterAmenities[i] = api.Amenity{
+			Id:          a.ID,
+			Name:        a.Name,
+			Description: a.Description,
+		}
+	}
+
+	hallAmenities := make([]api.Amenity, len(reservationDetail.HallAmenities))
+	for i, a := range reservationDetail.HallAmenities {
+		hallAmenities[i] = api.Amenity{
+			Id:          a.ID,
+			Name:        a.Name,
+			Description: a.Description,
+		}
+	}
+
+	return api.ReservationDetailResponse{
+		Id:               reservationDetail.ReservationID,
+		MovieTitle:       reservationDetail.MovieTitle,
+		MoviePosterUrl:   reservationDetail.MoviePosterUrl,
+		Date:             reservationDetail.ShowtimeDate,
+		TheaterName:      reservationDetail.TheaterName,
+		HallName:         reservationDetail.HallName,
+		CreatedAt:        reservationDetail.CreatedAt,
+		Seats:            seats,
+		TheaterAmenities: &theaterAmenities,
+		HallAmenities:    &hallAmenities,
+		TotalPrice:       reservationDetail.TotalPrice,
+	}
 }

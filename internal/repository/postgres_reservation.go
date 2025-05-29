@@ -197,3 +197,190 @@ func (p *PostgresReservationRepository) GetReservationsSummariesByUserId(
 
 	return reservations, metadata, nil
 }
+
+func (p *PostgresReservationRepository) GetByReservationIdAndUserId(
+	ctx context.Context,
+	reservationId,
+	userId int) (*domain.ReservationDetail, error) {
+
+	query := `
+		SELECT
+			r.id,
+			m.title,
+			m.poster_url,
+			s.start_time,
+			t.name,
+			h.name,
+			r.created_at,
+			p.amount,
+			h.id,
+			t.id
+		FROM reservations r
+		JOIN payments p ON r.payment_id = p.id
+		JOIN showtimes s ON r.showtime_id = s.id
+		JOIN movies m ON s.movie_id = m.id
+		JOIN halls h ON s.hall_id = h.id
+		JOIN theaters t ON h.theater_id = t.id
+		WHERE r.id = $1 AND r.user_id = $2
+	`
+
+	var reservationDetail domain.ReservationDetail
+	var theaterId int
+	var hallId int
+
+	err := p.db.QueryRow(ctx, query, reservationId, userId).Scan(
+		&reservationDetail.ReservationID,
+		&reservationDetail.MovieTitle,
+		&reservationDetail.MoviePosterUrl,
+		&reservationDetail.ShowtimeDate,
+		&reservationDetail.TheaterName,
+		&reservationDetail.HallName,
+		&reservationDetail.CreatedAt,
+		&reservationDetail.TotalPrice,
+		&theaterId,
+		&hallId,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrRecordNotFound
+		}
+
+		return nil, err
+	}
+
+	reservationSeats, err := p.retrieveReservationSeats(ctx, reservationId)
+	if err != nil {
+		return nil, err
+	}
+
+	theaterAmenities, err := p.retrieveTheaterAmenities(ctx, theaterId)
+	if err != nil {
+		return nil, err
+	}
+
+	hallAmenities, err := p.retrieveHallAmenities(ctx, hallId)
+	if err != nil {
+		return nil, err
+	}
+
+	reservationDetail.Seats = reservationSeats
+	reservationDetail.TheaterAmenities = theaterAmenities
+	reservationDetail.HallAmenities = hallAmenities
+
+	return &reservationDetail, nil
+}
+
+func (p *PostgresReservationRepository) retrieveTheaterAmenities(
+	ctx context.Context, theaterId int) ([]domain.Amenity, error) {
+
+	query := `
+		SELECT a.id, a.name, a.description
+		FROM amenities a
+		JOIN theater_amenities ta 
+			ON a.id = ta.amenity_id AND ta.theater_id = $1
+	`
+
+	rows, err := p.db.Query(ctx, query, theaterId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	amenities := make([]domain.Amenity, 0)
+
+	for rows.Next() {
+		var amenity domain.Amenity
+
+		err := rows.Scan(&amenity.ID, &amenity.Name, &amenity.Description)
+		if err != nil {
+			return nil, err
+		}
+
+		amenities = append(amenities, amenity)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return amenities, err
+}
+
+func (p *PostgresReservationRepository) retrieveHallAmenities(
+	ctx context.Context, hallId int) ([]domain.Amenity, error) {
+
+	query := `
+		SELECT a.id, a.name, a.description
+		FROM amenities a
+		JOIN hall_amenities ha 
+			ON a.id = ha.amenity_id AND ha.hall_id = $1
+	`
+
+	rows, err := p.db.Query(ctx, query, hallId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	amenities := make([]domain.Amenity, 0)
+
+	for rows.Next() {
+		var amenity domain.Amenity
+
+		err := rows.Scan(&amenity.ID, &amenity.Name, &amenity.Description)
+		if err != nil {
+			return nil, err
+		}
+
+		amenities = append(amenities, amenity)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return amenities, err
+}
+
+func (p *PostgresReservationRepository) retrieveReservationSeats(
+	ctx context.Context,
+	reservationId int) ([]domain.ReservationDetailSeat, error) {
+
+	query := `
+		SELECT s.seat_row, s.seat_col, s.seat_type
+		FROM reservation_seats rs
+		JOIN seats s ON rs.seat_id = s.id
+		WHERE reservation_id = $1
+	`
+
+	rows, err := p.db.Query(ctx, query, reservationId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	reservationSeats := make([]domain.ReservationDetailSeat, 0)
+
+	for rows.Next() {
+		var reservationSeat domain.ReservationDetailSeat
+
+		err := rows.Scan(
+			&reservationSeat.Row,
+			&reservationSeat.Col,
+			&reservationSeat.Type,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		reservationSeats = append(reservationSeats, reservationSeat)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return reservationSeats, nil
+}
