@@ -1,4 +1,4 @@
-include .envrc
+include .env
 
 ## help: print this help message
 .PHONY: help
@@ -51,7 +51,7 @@ db/migrations/reset: confirm
 db/seed:
 	@echo 'Seeding database with $(file)...'
 ifeq ($(ENV), development)
-	docker exec -i ${DB_CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} < ./migrations/seed/$(file)
+	docker exec -i ${DB_CONTAINER} psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} < ./migrations/seed/$(file)
 else
 	@echo 'Skipping seeding (only allowed in development).'
 endif
@@ -90,3 +90,21 @@ audit:
 build:
 	@echo 'Building cmd/api...'
 	go build -ldflags='-s' -o=./bin/api ./cmd/api
+
+## docker/build: build the Docker image
+.PHONY: docker/build
+docker/build:
+	@echo 'Building Docker image...'
+	docker-compose build
+
+## docker/up: start the Docker containers
+.PHONY: docker/up
+docker/up:
+	@echo 'Starting Docker containers...'
+	docker-compose up -d
+
+## docker/down: stop the Docker containers
+.PHONY: docker/down
+docker/down:
+	@echo 'Stopping Docker containers...'
+	docker-compose down

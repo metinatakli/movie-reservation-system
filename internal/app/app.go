@@ -224,7 +224,7 @@ func newDatabasePool(cfg config) (*pgxpool.Pool, error) {
 
 func (app *application) run() error {
 	srv := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", app.config.port),
+		Addr:         fmt.Sprintf("0.0.0.0:%d", app.config.port),
 		Handler:      app.routes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  5 * time.Second,
