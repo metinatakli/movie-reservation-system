@@ -13,7 +13,7 @@ func (s sessionKey) String() string {
 	return string(s)
 }
 
-func (app *application) contextGetUserId(r *http.Request) int {
+func (app *Application) contextGetUserId(r *http.Request) int {
 	userId, ok := r.Context().Value(SessionKeyUserId).(int)
 	if !ok {
 		panic("missing user id from context")

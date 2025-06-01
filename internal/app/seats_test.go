@@ -17,7 +17,7 @@ import (
 
 type SeatsTestSuite struct {
 	suite.Suite
-	app             *application
+	app             *Application
 	seatRepo        *mocks.MockSeatRepo
 	reservationRepo *mocks.MockReservationRepo
 	redisClient     *mocks.MockRedisClient
@@ -28,7 +28,7 @@ func (s *SeatsTestSuite) SetupTest() {
 	s.reservationRepo = new(mocks.MockReservationRepo)
 	s.redisClient = new(mocks.MockRedisClient)
 
-	s.app = newTestApplication(func(a *application) {
+	s.app = newTestApplication(func(a *Application) {
 		a.seatRepo = s.seatRepo
 		a.reservationRepo = s.reservationRepo
 		a.redis = s.redisClient

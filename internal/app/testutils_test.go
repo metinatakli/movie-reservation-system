@@ -14,8 +14,8 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/validator"
 )
 
-func newTestApplication(opts ...func(*application)) *application {
-	app := &application{
+func newTestApplication(opts ...func(*Application)) *Application {
+	app := &Application{
 		validator: validator.NewValidator(),
 		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		userRepo:  &mocks.MockUserRepo{},
@@ -30,7 +30,7 @@ func newTestApplication(opts ...func(*application)) *application {
 	return app
 }
 
-func setupTestSession(t *testing.T, app *application, r *http.Request, userId int) *http.Request {
+func setupTestSession(t *testing.T, app *Application, r *http.Request, userId int) *http.Request {
 	ctx, err := app.sessionManager.Load(r.Context(), "session")
 	if err != nil {
 		t.Errorf("Failed to load session: %v", err)

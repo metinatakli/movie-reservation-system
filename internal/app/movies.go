@@ -17,7 +17,7 @@ const (
 	DefaultSort     = "id"
 )
 
-func (app *application) GetMovies(w http.ResponseWriter, r *http.Request, params api.GetMoviesParams) {
+func (app *Application) GetMovies(w http.ResponseWriter, r *http.Request, params api.GetMoviesParams) {
 	err := app.validator.Struct(params)
 	if err != nil {
 		app.failedValidationResponse(w, r, err)
@@ -116,7 +116,7 @@ func toApiMetadata(metadata *domain.Metadata) *api.Metadata {
 	}
 }
 
-func (app *application) ShowMovieDetails(w http.ResponseWriter, r *http.Request, id int) {
+func (app *Application) ShowMovieDetails(w http.ResponseWriter, r *http.Request, id int) {
 	if id < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("movie ID must be greater than zero"))
 		return
@@ -171,7 +171,7 @@ func toMovieDetailsResponse(movie *domain.Movie) api.MovieDetailsResponse {
 	return resp
 }
 
-func (app *application) GetMovieShowtimes(
+func (app *Application) GetMovieShowtimes(
 	w http.ResponseWriter,
 	r *http.Request,
 	id int,

@@ -18,7 +18,7 @@ const (
 	cartTTL     = 10 * time.Minute
 )
 
-func (app *application) CreateCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
+func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
 	if showtimeID < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
 		return
@@ -142,7 +142,7 @@ func toApiCartSeats(cartSeats []domain.CartSeat) []api.CartSeat {
 	return apiCartSeats
 }
 
-func (app *application) tryLockSeats(ctx context.Context, seatIDs []int, showtimeID int, sessionID string) error {
+func (app *Application) tryLockSeats(ctx context.Context, seatIDs []int, showtimeID int, sessionID string) error {
 	lockPipe := app.redis.TxPipeline()
 
 	for _, seatID := range seatIDs {
@@ -182,7 +182,7 @@ func (app *application) tryLockSeats(ctx context.Context, seatIDs []int, showtim
 	return nil
 }
 
-func (app *application) createCart(
+func (app *Application) createCart(
 	ctx context.Context,
 	seatIDs []int,
 	showtimeID int,
@@ -215,7 +215,7 @@ func (app *application) createCart(
 	return &cart, nil
 }
 
-func (app *application) rollbackSeatLocks(ctx context.Context, showtimeID int, seatIDs []int) {
+func (app *Application) rollbackSeatLocks(ctx context.Context, showtimeID int, seatIDs []int) {
 	seatSetKey := seatSetKey(showtimeID)
 
 	for _, seatID := range seatIDs {
@@ -243,7 +243,7 @@ func seatSetKey(showtimeID int) string {
 	return fmt.Sprintf("seat_locks:%d", showtimeID)
 }
 
-func (app *application) DeleteCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
+func (app *Application) DeleteCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
 	if showtimeID < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
 		return
@@ -300,7 +300,7 @@ func (app *application) DeleteCartHandler(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) migrateSessionData(ctx context.Context, oldSessionId, newSessionId string) error {
+func (app *Application) migrateSessionData(ctx context.Context, oldSessionId, newSessionId string) error {
 	cartId, err := app.redis.Get(ctx, cartSessionKey(oldSessionId)).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return fmt.Errorf("failed to get cart ID for session %s: %w", oldSessionId, err)

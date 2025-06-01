@@ -216,7 +216,7 @@ func TestGetMovies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.movieRepo = &mocks.MockMovieRepo{
 					GetAllFunc: tt.getAllFunc,
 				}
@@ -322,7 +322,7 @@ func TestShowMovieDetails(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.movieRepo = &mocks.MockMovieRepo{
 					GetByIdFunc: tt.getByIdFunc,
 				}
@@ -571,7 +571,7 @@ func TestGetMovieShowtimes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.theaterRepo = &mocks.MockTheaterRepo{
 					GetTheatersByMovieAndLocationAndDateFunc: tt.getTheatersFunc,
 				}

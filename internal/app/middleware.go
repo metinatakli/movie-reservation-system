@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-func (app *application) recoverPanic(next http.Handler) http.Handler {
+func (app *Application) recoverPanic(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
@@ -20,7 +20,7 @@ func (app *application) recoverPanic(next http.Handler) http.Handler {
 	})
 }
 
-func (app *application) ensureGuestUserSession(next http.Handler) http.Handler {
+func (app *Application) ensureGuestUserSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sessionId := app.sessionManager.Token(r.Context())
 
@@ -38,7 +38,7 @@ func (app *application) ensureGuestUserSession(next http.Handler) http.Handler {
 	})
 }
 
-func (app *application) requireAuthentication(next http.Handler) http.Handler {
+func (app *Application) requireAuthentication(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 		if userId == 0 {

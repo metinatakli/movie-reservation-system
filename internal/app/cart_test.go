@@ -64,7 +64,7 @@ var (
 
 type CartTestSuite struct {
 	suite.Suite
-	app             *application
+	app             *Application
 	seatRepo        *mocks.MockSeatRepo
 	reservationRepo *mocks.MockReservationRepo
 	redisClient     *mocks.MockRedisClient
@@ -77,7 +77,7 @@ func (s *CartTestSuite) SetupTest() {
 	s.redisClient = new(mocks.MockRedisClient)
 	s.redisPipeline = new(mocks.MockTxPipeline)
 
-	s.app = newTestApplication(func(a *application) {
+	s.app = newTestApplication(func(a *Application) {
 		a.seatRepo = s.seatRepo
 		a.reservationRepo = s.reservationRepo
 		a.sessionManager = scs.New()

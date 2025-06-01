@@ -139,7 +139,7 @@ func TestRegisterUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{CreateFunc: tt.userRepoFunc}
 				a.tokenRepo = &mocks.MockTokenRepo{CreateFunc: tt.tokenRepoFunc}
 				a.mailer = &MockMailer{sendFunc: tt.mailerFunc}
@@ -265,7 +265,7 @@ func TestActivateUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{
 					GetByTokenFunc: tt.getUserByTokenFunc,
 					UpdateFunc:     tt.updateUserFunc,
@@ -309,7 +309,7 @@ func TestActivateUser(t *testing.T) {
 // TODO: rewrite auth_test.go using testify
 type LoginTestSuite struct {
 	suite.Suite
-	app           *application
+	app           *Application
 	redisClient   *mocks.MockRedisClient
 	redisPipeline *mocks.MockTxPipeline
 }
@@ -318,7 +318,7 @@ func (s *LoginTestSuite) SetupTest() {
 	s.redisClient = new(mocks.MockRedisClient)
 	s.redisPipeline = new(mocks.MockTxPipeline)
 
-	s.app = newTestApplication(func(a *application) {
+	s.app = newTestApplication(func(a *Application) {
 		a.redis = s.redisClient
 		a.sessionManager = scs.New()
 	})
@@ -517,7 +517,7 @@ func TestLogout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.sessionManager = scs.New()
 			})
 

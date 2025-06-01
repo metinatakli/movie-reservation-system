@@ -20,13 +20,13 @@ import (
 
 type ReservationsTestSuite struct {
 	suite.Suite
-	app             *application
+	app             *Application
 	reservationRepo *mocks.MockReservationRepo
 }
 
 func (s *ReservationsTestSuite) SetupTest() {
 	s.reservationRepo = new(mocks.MockReservationRepo)
-	s.app = newTestApplication(func(a *application) {
+	s.app = newTestApplication(func(a *Application) {
 		a.reservationRepo = s.reservationRepo
 		a.sessionManager = scs.New()
 	})

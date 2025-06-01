@@ -9,7 +9,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 )
 
-func (app *application) GetReservationsOfUserHandler(
+func (app *Application) GetReservationsOfUserHandler(
 	w http.ResponseWriter,
 	r *http.Request,
 	params api.GetReservationsOfUserHandlerParams) {
@@ -76,7 +76,7 @@ func toPagination(params api.GetReservationsOfUserHandlerParams) domain.Paginati
 	return pagination
 }
 
-func (app *application) GetUserReservationById(w http.ResponseWriter, r *http.Request, reservationId int) {
+func (app *Application) GetUserReservationById(w http.ResponseWriter, r *http.Request, reservationId int) {
 	if reservationId <= 0 {
 		app.badRequestResponse(w, r, fmt.Errorf("reservation id must be greater than zero"))
 		return

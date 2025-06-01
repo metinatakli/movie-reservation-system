@@ -88,7 +88,7 @@ func TestGetUsersMe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{
 					GetByIdFunc: tt.getByIdFunc,
 				}
@@ -272,7 +272,7 @@ func TestUpdateUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{
 					GetByIdFunc: tt.getByIdFunc,
 					UpdateFunc:  tt.updateFunc,
@@ -423,7 +423,7 @@ func TestInitiateUserDeletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{
 					GetByIdFunc: tt.getByIdFunc,
 				}
@@ -579,7 +579,7 @@ func TestCompleteUserDeletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			app := newTestApplication(func(a *application) {
+			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{
 					GetByTokenFunc: tt.getByTokenFunc,
 					DeleteFunc:     tt.deleteFunc,

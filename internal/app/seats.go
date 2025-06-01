@@ -10,7 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func (app *application) GetSeatMapByShowtime(
+func (app *Application) GetSeatMapByShowtime(
 	w http.ResponseWriter,
 	r *http.Request,
 	showtimeID int) {
@@ -45,7 +45,7 @@ func (app *application) GetSeatMapByShowtime(
 	}
 }
 
-func (app *application) updateSeatAvailability(ctx context.Context, showtimeID int, showtimeSeats *domain.ShowtimeSeats) error {
+func (app *Application) updateSeatAvailability(ctx context.Context, showtimeID int, showtimeSeats *domain.ShowtimeSeats) error {
 	filterValidLockSeats := redis.NewScript(`
 		local setKey = KEYS[1]
 		local showtimeId = ARGV[1]

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func (app *application) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+func (app *Application) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	userId := app.contextGetUserId(r)
 
 	user, err := app.userRepo.GetById(r.Context(), userId)
@@ -47,7 +47,7 @@ func (app *application) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) UpdateUser(w http.ResponseWriter, r *http.Request) {
+func (app *Application) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	var input api.UpdateUserRequest
 
 	err := app.readJSON(w, r, &input)
@@ -119,7 +119,7 @@ func (app *application) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Request) {
+func (app *Application) InitiateUserDeletion(w http.ResponseWriter, r *http.Request) {
 	var input api.InitiateUserDeletionRequest
 
 	err := app.readJSON(w, r, &input)
@@ -187,7 +187,7 @@ func (app *application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (app *application) CompleteUserDeletion(w http.ResponseWriter, r *http.Request) {
+func (app *Application) CompleteUserDeletion(w http.ResponseWriter, r *http.Request) {
 	var input api.CompleteUserDeletionRequest
 
 	err := app.readJSON(w, r, &input)

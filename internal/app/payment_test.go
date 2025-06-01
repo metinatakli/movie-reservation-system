@@ -29,7 +29,7 @@ func (m *MockUserRepo) GetById(ctx context.Context, id int) (*domain.User, error
 
 type CheckoutSessionTestSuite struct {
 	suite.Suite
-	app             *application
+	app             *Application
 	redisClient     *mocks.MockRedisClient
 	paymentRepo     *mocks.MockPaymentRepo
 	userRepo        *MockUserRepo
@@ -44,7 +44,7 @@ func (s *CheckoutSessionTestSuite) SetupTest() {
 	s.paymentProvider = new(mocks.MockPaymentProvider)
 	s.sessionManager = scs.New()
 
-	s.app = newTestApplication(func(a *application) {
+	s.app = newTestApplication(func(a *Application) {
 		a.redis = s.redisClient
 		a.paymentRepo = s.paymentRepo
 		a.userRepo = s.userRepo

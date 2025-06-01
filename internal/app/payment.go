@@ -22,7 +22,7 @@ const (
 	maxBodyBytes = int64(65536)
 )
 
-func (app *application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *http.Request) {
+func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *http.Request) {
 	sessionId := app.sessionManager.Token(r.Context())
 	cartId, err := app.redis.Get(r.Context(), cartSessionKey(sessionId)).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
@@ -106,7 +106,7 @@ func (app *application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 }
 
 // TODO: handle idempotency
-func (app *application) StripeWebhookHandler(w http.ResponseWriter, r *http.Request) {
+func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -123,7 +123,7 @@ func (app *application) StripeWebhookHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	endpointSecret := app.config.stripe.webhookSecret
+	endpointSecret := app.config.Stripe.WebhookSecret
 	signatureHeader := r.Header.Get("Stripe-Signature")
 	event, err = webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
 	if err != nil {
@@ -151,7 +151,7 @@ func (app *application) StripeWebhookHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 }
 
-func (app *application) handleCheckoutSessionCompleted(
+func (app *Application) handleCheckoutSessionCompleted(
 	ctx context.Context,
 	checkoutSession stripe.CheckoutSession) (err error) {
 

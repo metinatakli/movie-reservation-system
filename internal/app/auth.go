@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
+func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	var input api.RegisterRequest
 
 	err := app.readJSON(w, r, &input)
@@ -104,7 +104,7 @@ func (app *application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) ActivateUser(w http.ResponseWriter, r *http.Request) {
+func (app *Application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 	var input api.UserActivationRequest
 
 	err := app.readJSON(w, r, &input)
@@ -166,7 +166,7 @@ func (app *application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (app *application) Login(w http.ResponseWriter, r *http.Request) {
+func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
 	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 	if userId != 0 {
 		resp := api.AlreadyLoggedInResponse{
@@ -239,7 +239,7 @@ func (app *application) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (app *application) Logout(w http.ResponseWriter, r *http.Request) {
+func (app *Application) Logout(w http.ResponseWriter, r *http.Request) {
 	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 	if userId == 0 {
 		app.notFoundResponse(w, r)

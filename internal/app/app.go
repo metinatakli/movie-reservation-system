@@ -34,8 +34,8 @@ var (
 	version = vcs.Version()
 )
 
-type application struct {
-	config         config
+type Application struct {
+	config         Config
 	logger         *slog.Logger
 	db             *pgxpool.Pool
 	redis          redis.UniversalClient
@@ -54,60 +54,68 @@ type application struct {
 	paymentProvider domain.PaymentProvider
 }
 
-type config struct {
-	port int
-	env  string
-	db   struct {
-		dsn          string
-		maxOpenConns int
-		maxIdleTime  time.Duration
-	}
-	redis struct {
-		url          string
-		maxOpenConns int
-		maxIdleConns int
-		maxIdleTime  time.Duration
-	}
-	smtp struct {
-		host     string
-		port     int
-		username string
-		password string
-		sender   string
-	}
-	stripe struct {
-		secretKey     string
-		webhookSecret string
-		successUrl    string
-		failureUrl    string
-	}
+type DBConfig struct {
+	DSN          string
+	MaxOpenConns int
+	MaxIdleTime  time.Duration
 }
 
-func Run() error {
-	var cfg config
+type RedisConfig struct {
+	URL          string
+	MaxOpenConns int
+	MaxIdleConns int
+	MaxIdleTime  time.Duration
+}
 
-	flag.IntVar(&cfg.port, "port", 3000, "server port")
-	flag.StringVar(&cfg.env, "env", "dev", "Environment (dev|staging|prod)")
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	Sender   string
+}
 
-	flag.StringVar(&cfg.db.dsn, "db-dsn", "", "PostgreSQL DSN")
-	flag.IntVar(&cfg.db.maxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
-	flag.DurationVar(&cfg.db.maxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max idle time for connections")
+type StripeConfig struct {
+	SecretKey     string
+	WebhookSecret string
+	SuccessURL    string
+	FailureURL    string
+}
 
-	flag.StringVar(&cfg.redis.url, "redis-url", "", "Redis URL")
-	flag.IntVar(&cfg.redis.maxOpenConns, "redis-max-open-conns", 25, "Redis max open connections")
-	flag.IntVar(&cfg.redis.maxIdleConns, "redis-max-idle-conns", 10, "Redis max idle connections")
-	flag.DurationVar(&cfg.redis.maxIdleTime, "redis-max-idle-time", 2*time.Minute, "Redis max idle time for connections")
+type Config struct {
+	Port   int
+	Env    string
+	DB     DBConfig
+	Redis  RedisConfig
+	SMTP   SMTPConfig
+	Stripe StripeConfig
+}
 
-	flag.StringVar(&cfg.smtp.host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
-	flag.IntVar(&cfg.smtp.port, "smtp-port", 2525, "SMTP port")
-	flag.StringVar(&cfg.smtp.username, "smtp-username", "", "SMTP username")
-	flag.StringVar(&cfg.smtp.password, "smtp-password", "", "SMTP password")
-	flag.StringVar(&cfg.smtp.sender, "smtp-sender", "CineX <no-reply@cinex.metinatakli.net>", "SMTP sender")
+func loadFlags() Config {
+	var cfg Config
 
-	flag.StringVar(&cfg.stripe.secretKey, "stripe-key", "", "Stripe secret key")
-	flag.StringVar(&cfg.stripe.webhookSecret, "stripe-webhook-secret", "", "Stripe webhook secret")
-	flag.StringVar(&cfg.stripe.successUrl, "stripe-success-url", "https://example.com/success.html", "Stripe payment success page")
-	flag.StringVar(&cfg.stripe.failureUrl, "stripe-failure-url", "https://example.com/failure.html", "Stripe payment failure page")
+	flag.IntVar(&cfg.Port, "port", 3000, "server port")
+	flag.StringVar(&cfg.Env, "env", "dev", "Environment (dev|staging|prod)")
+
+	flag.StringVar(&cfg.DB.DSN, "db-dsn", "", "PostgreSQL DSN")
+	flag.IntVar(&cfg.DB.MaxOpenConns, "db-max-open-conns", 25, "PostgreSQL max open connections")
+	flag.DurationVar(&cfg.DB.MaxIdleTime, "db-max-idle-time", 15*time.Minute, "PostgreSQL max idle time for connections")
+
+	flag.StringVar(&cfg.Redis.URL, "redis-url", "", "Redis URL")
+	flag.IntVar(&cfg.Redis.MaxOpenConns, "redis-max-open-conns", 25, "Redis max open connections")
+	flag.IntVar(&cfg.Redis.MaxIdleConns, "redis-max-idle-conns", 10, "Redis max idle connections")
+	flag.DurationVar(&cfg.Redis.MaxIdleTime, "redis-max-idle-time", 2*time.Minute, "Redis max idle time for connections")
+
+	flag.StringVar(&cfg.SMTP.Host, "smtp-host", "sandbox.smtp.mailtrap.io", "SMTP host")
+	flag.IntVar(&cfg.SMTP.Port, "smtp-port", 2525, "SMTP port")
+	flag.StringVar(&cfg.SMTP.Username, "smtp-username", "", "SMTP username")
+	flag.StringVar(&cfg.SMTP.Password, "smtp-password", "", "SMTP password")
+	flag.StringVar(&cfg.SMTP.Sender, "smtp-sender", "CineX <no-reply@cinex.metinatakli.net>", "SMTP sender")
+
+	flag.StringVar(&cfg.Stripe.SecretKey, "stripe-key", "", "Stripe secret key")
+	flag.StringVar(&cfg.Stripe.WebhookSecret, "stripe-webhook-secret", "", "Stripe webhook secret")
+	flag.StringVar(&cfg.Stripe.SuccessURL, "stripe-success-url", "https://example.com/success.html", "Stripe payment success page")
+	flag.StringVar(&cfg.Stripe.FailureURL, "stripe-failure-url", "https://example.com/failure.html", "Stripe payment failure page")
 
 	displayVersion := flag.Bool("version", false, "Display version and exit")
 
@@ -118,17 +126,30 @@ func Run() error {
 		os.Exit(0)
 	}
 
-	stripe.Key = cfg.stripe.secretKey
+	return cfg
+}
+
+func newApp(cfg Config) (*Application, error) {
+	stripe.Key = cfg.Stripe.SecretKey
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	validator := appvalidator.NewValidator()
 
-	db, err := newDatabasePool(cfg)
+	mailer := mailer.NewSMTPMailer(cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.Username, cfg.SMTP.Password, cfg.SMTP.Sender)
+
+	db, err := NewDatabasePool(cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer db.Close()
+
+	redisClient, err := NewRedisClient(cfg)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	sessionManager := NewSessionManager(redisClient)
 
 	userRepo := repository.NewPostgresUserRepository(db)
 	tokenRepo := repository.NewPostgresTokenRepository(db)
@@ -138,22 +159,55 @@ func Run() error {
 	paymentRepo := repository.NewPostgresPaymentRepository(db)
 	reservationRepo := repository.NewPostgresReservationRepository(db)
 
-	stripeProvider := payment.NewStripePaymentProvider(cfg.stripe.failureUrl, cfg.stripe.successUrl)
+	stripeProvider := payment.NewStripePaymentProvider(cfg.Stripe.FailureURL, cfg.Stripe.SuccessURL)
 
-	redisClient, err := newRedisClient(cfg)
-	if err != nil {
-		return err
-	}
-	defer redisClient.Close()
+	app := NewApp(
+		cfg,
+		logger,
+		db,
+		redisClient,
+		validator,
+		mailer,
+		sessionManager,
+		userRepo,
+		tokenRepo,
+		movieRepo,
+		theaterRepo,
+		seatRepo,
+		paymentRepo,
+		reservationRepo,
+		stripeProvider,
+	)
 
-	app := &application{
+	return app, nil
+}
+
+func NewApp(
+	cfg Config,
+	logger *slog.Logger,
+	db *pgxpool.Pool,
+	redisClient redis.UniversalClient,
+	validator *validator.Validate,
+	mailer mailer.Mailer,
+	sessionManager *scs.SessionManager,
+	userRepo domain.UserRepository,
+	tokenRepo domain.TokenRepository,
+	movieRepo domain.MovieRepository,
+	theaterRepo domain.TheaterRepository,
+	seatRepo domain.SeatRepository,
+	paymentRepo domain.PaymentRepository,
+	reservationRepo domain.ReservationRepository,
+	paymentProvider domain.PaymentProvider,
+) *Application {
+
+	return &Application{
 		config:          cfg,
 		logger:          logger,
 		db:              db,
 		redis:           redisClient,
 		validator:       validator,
-		mailer:          mailer.NewSMTPMailer(cfg.smtp.host, cfg.smtp.port, cfg.smtp.username, cfg.smtp.password, cfg.smtp.sender),
-		sessionManager:  newSessionManager(redisClient),
+		mailer:          mailer,
+		sessionManager:  sessionManager,
 		userRepo:        userRepo,
 		tokenRepo:       tokenRepo,
 		movieRepo:       movieRepo,
@@ -161,13 +215,24 @@ func Run() error {
 		seatRepo:        seatRepo,
 		paymentRepo:     paymentRepo,
 		reservationRepo: reservationRepo,
-		paymentProvider: stripeProvider,
+		paymentProvider: paymentProvider,
 	}
+}
+
+func Run() error {
+	cfg := loadFlags()
+	app, err := newApp(cfg)
+	if err != nil {
+		return err
+	}
+
+	defer app.db.Close()
+	defer app.redis.Close()
 
 	return app.run()
 }
 
-func newSessionManager(client *redis.Client) *scs.SessionManager {
+func NewSessionManager(client *redis.Client) *scs.SessionManager {
 	sessionManager := scs.New()
 
 	sessionManager.Store = goredisstore.New(client)
@@ -177,12 +242,12 @@ func newSessionManager(client *redis.Client) *scs.SessionManager {
 	return sessionManager
 }
 
-func newRedisClient(cfg config) (*redis.Client, error) {
+func NewRedisClient(cfg Config) (*redis.Client, error) {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:            cfg.redis.url,
-		MaxIdleConns:    cfg.redis.maxIdleConns,
-		MaxActiveConns:  cfg.redis.maxOpenConns,
-		ConnMaxIdleTime: cfg.redis.maxIdleTime,
+		Addr:            cfg.Redis.URL,
+		MaxIdleConns:    cfg.Redis.MaxIdleConns,
+		MaxActiveConns:  cfg.Redis.MaxOpenConns,
+		ConnMaxIdleTime: cfg.Redis.MaxIdleTime,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -196,14 +261,14 @@ func newRedisClient(cfg config) (*redis.Client, error) {
 	return rdb, nil
 }
 
-func newDatabasePool(cfg config) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(cfg.db.dsn)
+func NewDatabasePool(cfg Config) (*pgxpool.Pool, error) {
+	config, err := pgxpool.ParseConfig(cfg.DB.DSN)
 	if err != nil {
 		return nil, err
 	}
 
-	config.MaxConnIdleTime = cfg.db.maxIdleTime
-	config.MaxConns = int32(cfg.db.maxOpenConns)
+	config.MaxConnIdleTime = cfg.DB.MaxIdleTime
+	config.MaxConns = int32(cfg.DB.MaxOpenConns)
 
 	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
@@ -222,10 +287,10 @@ func newDatabasePool(cfg config) (*pgxpool.Pool, error) {
 	return db, nil
 }
 
-func (app *application) run() error {
+func (app *Application) run() error {
 	srv := &http.Server{
-		Addr:         fmt.Sprintf("0.0.0.0:%d", app.config.port),
-		Handler:      app.routes(),
+		Addr:         fmt.Sprintf("0.0.0.0:%d", app.config.Port),
+		Handler:      app.Routes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -252,7 +317,7 @@ func (app *application) run() error {
 		shutdownError <- nil
 	}()
 
-	app.logger.Info("starting server", "addr", srv.Addr, "env", app.config.env)
+	app.logger.Info("starting server", "addr", srv.Addr, "env", app.config.Env)
 
 	err := srv.ListenAndServe()
 	if !errors.Is(err, http.ErrServerClosed) {
@@ -269,7 +334,7 @@ func (app *application) run() error {
 	return nil
 }
 
-func (app *application) routes() http.Handler {
+func (app *Application) Routes() http.Handler {
 	r := chi.NewRouter()
 
 	r.NotFound(app.notFoundResponse)

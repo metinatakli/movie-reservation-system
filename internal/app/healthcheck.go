@@ -7,11 +7,11 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 )
 
-func (app *application) GetHealth(w http.ResponseWriter, r *http.Request) {
+func (app *Application) GetHealth(w http.ResponseWriter, r *http.Request) {
 	status := "UP"
 	systemInfo := api.SystemInfo{
 		Version:     vcs.Version(),
-		Environment: app.config.env,
+		Environment: app.config.Env,
 	}
 
 	resp := api.HealthcheckResponse{
