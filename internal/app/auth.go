@@ -42,29 +42,19 @@ func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = app.userRepo.Create(r.Context(), &user)
+	token, err := app.userRepo.CreateWithToken(r.Context(), &user, func(user *domain.User) (*domain.Token, error) {
+		return domain.GenerateToken(int64(user.ID), 10*time.Minute, domain.UserActivationScope)
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrUserAlreadyExists):
-			app.logError(r, fmt.Errorf(err.Error(), user.Email))
+			app.logError(r, fmt.Errorf("attempt to register existing email %s: %w", user.Email, err))
 			// do not return the info of existence of email to avoid user enumeration attacks
 			app.badRequestResponse(w, r, fmt.Errorf("invalid input data"))
 		default:
 			app.serverErrorResponse(w, r, err)
 		}
 
-		return
-	}
-
-	token, err := domain.GenerateToken(int64(user.ID), 10*time.Minute, domain.UserActivationScope)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	err = app.tokenRepo.Create(r.Context(), token)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
 		return
 	}
 
@@ -94,6 +84,7 @@ func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		BirthDate: types.Date{Time: user.BirthDate},
 		Gender:    api.Gender(user.Gender),
 		Activated: user.Activated,
+		CreatedAt: user.CreatedAt,
 		Version:   user.Version,
 	}
 

@@ -22,30 +22,58 @@ func NewPostgresUserRepository(db *pgxpool.Pool) *PostgesUserRepository {
 	}
 }
 
-func (p *PostgesUserRepository) Create(ctx context.Context, user *domain.User) error {
-	query := `INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender)
+func (p *PostgesUserRepository) CreateWithToken(
+	ctx context.Context,
+	user *domain.User,
+	tokenProvider func(*domain.User) (*domain.Token, error)) (*domain.Token, error) {
+
+	var token *domain.Token
+
+	err := runInTx(ctx, p.db, func(tx pgx.Tx) error {
+		query := `INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, activated, version`
 
-	err := p.db.QueryRow(ctx,
-		query,
-		&user.FirstName,
-		&user.LastName,
-		&user.Email,
-		&user.Password.Hash,
-		&user.BirthDate,
-		&user.Gender).Scan(&user.ID, &user.CreatedAt, &user.Activated, &user.Version)
+		err := tx.QueryRow(ctx,
+			query,
+			&user.FirstName,
+			&user.LastName,
+			&user.Email,
+			&user.Password.Hash,
+			&user.BirthDate,
+			&user.Gender).Scan(&user.ID, &user.CreatedAt, &user.Activated, &user.Version)
 
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return domain.ErrUserAlreadyExists
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+				return domain.ErrUserAlreadyExists
+			}
+
+			return err
 		}
 
+		token, err = tokenProvider(user)
+		if err != nil {
+			return err
+		}
+
+		query = `INSERT INTO tokens (hash, user_id, expiry, scope)
+			VALUES($1, $2, $3, $4)
+			ON CONFLICT ON CONSTRAINT unique_user_scope DO 
+			UPDATE SET
+				hash = EXCLUDED.hash,  
+				expiry = EXCLUDED.expiry`
+
+		_, err = tx.Exec(ctx, query, token.Hash, token.UserId, token.Expiry, token.Scope)
+
 		return err
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	return token, err
 }
 
 func (p *PostgesUserRepository) GetByToken(

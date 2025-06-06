@@ -63,7 +63,7 @@ func (p *password) Matches(plaintext string) (bool, error) {
 }
 
 type UserRepository interface {
-	Create(context.Context, *User) error
+	CreateWithToken(context.Context, *User, func(*User) (*Token, error)) (*Token, error)
 	GetByToken(ctx context.Context, tokenHash []byte, tokenScope string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetById(ctx context.Context, id int) (*User, error)

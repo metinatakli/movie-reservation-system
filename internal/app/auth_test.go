@@ -32,34 +32,11 @@ func TestRegisterUser(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          api.RegisterRequest
-		userRepoFunc   func(context.Context, *domain.User) error
-		tokenRepoFunc  func(context.Context, *domain.Token) error
+		userRepoFunc   func(context.Context, *domain.User, func(*domain.User) (*domain.Token, error)) (*domain.Token, error)
 		mailerFunc     func(recipient, template string, data any) error
 		wantStatus     int
 		wantErrMessage string
 	}{
-		{
-			name: "successful registration",
-			input: api.RegisterRequest{
-				FirstName: "Freddie",
-				LastName:  "Mercury",
-				Email:     "freddie@example.com",
-				Password:  "Pass123!@#",
-				BirthDate: types.Date{Time: time.Now().AddDate(-20, 0, 0)},
-				Gender:    api.M,
-			},
-			userRepoFunc: func(ctx context.Context, u *domain.User) error {
-				u.ID = 1
-				return nil
-			},
-			tokenRepoFunc: func(ctx context.Context, t *domain.Token) error {
-				return nil
-			},
-			mailerFunc: func(recipient, template string, data any) error {
-				return nil
-			},
-			wantStatus: http.StatusAccepted,
-		},
 		{
 			name: "invalid password format",
 			input: api.RegisterRequest{
@@ -109,14 +86,14 @@ func TestRegisterUser(t *testing.T) {
 				BirthDate: types.Date{Time: time.Now().AddDate(-20, 0, 0)},
 				Gender:    api.M,
 			},
-			userRepoFunc: func(ctx context.Context, u *domain.User) error {
-				return domain.ErrUserAlreadyExists
+			userRepoFunc: func(ctx context.Context, u *domain.User, tp func(*domain.User) (*domain.Token, error)) (*domain.Token, error) {
+				return nil, domain.ErrUserAlreadyExists
 			},
 			wantStatus:     http.StatusBadRequest,
 			wantErrMessage: "invalid input data",
 		},
 		{
-			name: "token creation failure",
+			name: "successful registration",
 			input: api.RegisterRequest{
 				FirstName: "Freddie",
 				LastName:  "Mercury",
@@ -125,23 +102,22 @@ func TestRegisterUser(t *testing.T) {
 				BirthDate: types.Date{Time: time.Now().AddDate(-20, 0, 0)},
 				Gender:    api.M,
 			},
-			userRepoFunc: func(ctx context.Context, u *domain.User) error {
+			userRepoFunc: func(ctx context.Context, u *domain.User, tp func(*domain.User) (*domain.Token, error)) (*domain.Token, error) {
 				u.ID = 1
+				t, _ := tp(u)
+				return t, nil
+			},
+			mailerFunc: func(recipient, template string, data any) error {
 				return nil
 			},
-			tokenRepoFunc: func(ctx context.Context, t *domain.Token) error {
-				return fmt.Errorf("token creation failed")
-			},
-			wantStatus:     http.StatusInternalServerError,
-			wantErrMessage: ErrInternalServer,
+			wantStatus: http.StatusAccepted,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			app := newTestApplication(func(a *Application) {
-				a.userRepo = &mocks.MockUserRepo{CreateFunc: tt.userRepoFunc}
-				a.tokenRepo = &mocks.MockTokenRepo{CreateFunc: tt.tokenRepoFunc}
+				a.userRepo = &mocks.MockUserRepo{CreateWithTokenFunc: tt.userRepoFunc}
 				a.mailer = &MockMailer{sendFunc: tt.mailerFunc}
 			})
 
