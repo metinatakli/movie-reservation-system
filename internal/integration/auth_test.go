@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"crypto/sha256"
+	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -165,6 +168,157 @@ func (s *AuthTestSuite) TestRegisterUser() {
 				require.True(t, ok)
 				require.Equal(t, user.ID, data["userID"])
 				require.NotEmpty(t, data["activationToken"])
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (s *AuthTestSuite) TestActivateUser() {
+	scenarios := []Scenario{
+		{
+			Name:             "returns 400 for request with malformed JSON",
+			Method:           "PUT",
+			URL:              "/users/activation",
+			Body:             strings.NewReader(`{"bad":"json"`),
+			ExpectedStatus:   400,
+			ExpectedResponse: `{"message": "body contains badly-formed JSON"}`,
+		},
+		{
+			Name:   "returns 422 for invalid input data",
+			Method: "PUT",
+			URL:    "/users/activation",
+			Body: strings.NewReader(`{
+				"token": "invalid-token"
+			}`),
+			ExpectedStatus: 422,
+			ExpectedResponse: `{
+				"message": "One or more fields have invalid values",
+				"validationErrors": [
+					{"field": "Token", "issue": "is invalid"}
+				]
+			}`,
+		},
+		{
+			Name:   "returns 404 for non-existent token",
+			Method: "PUT",
+			URL:    "/users/activation",
+			Body: strings.NewReader(`{
+				"token": "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
+			}`),
+			ExpectedStatus: 404,
+			ExpectedResponse: `{
+				"message": "The requested resource not found"
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+			},
+		},
+		{
+			Name:   "returns 409 for already activated user",
+			Method: "PUT",
+			URL:    "/users/activation",
+			Body: strings.NewReader(`{
+				"token": "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
+			}`),
+			ExpectedStatus: 409,
+			ExpectedResponse: `{
+				"message": "Unable to update the record due to an edit conflict, please try again"
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+
+				// Create an activated user
+				_, err := app.DB.Exec(
+					context.Background(),
+					`
+						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
+						VALUES ($1, $2, $3, $4, $5, $6, $7)
+					`,
+					"John",
+					"Doe",
+					"test@example.com",
+					"$2a$12$1qAz2wSx3eDc4rFv5tGb5e",
+					"1990-01-01",
+					"M",
+					true,
+				)
+				require.NoError(t, err)
+
+				// Create activation token for the user
+				hash := sha256.Sum256([]byte("r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"))
+				_, err = app.DB.Exec(
+					context.Background(),
+					`
+						INSERT INTO tokens (hash, user_id, expiry, scope)
+						VALUES ($1, $2, $3, $4)
+					`,
+					hash[:],
+					1,
+					time.Now().Add(24*time.Hour),
+					"user_activation",
+				)
+				require.NoError(t, err)
+			},
+		},
+		{
+			Name:   "successfully activates a user",
+			Method: "PUT",
+			URL:    "/users/activation",
+			Body: strings.NewReader(`{
+				"token": "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
+			}`),
+			ExpectedStatus: 200,
+			ExpectedResponse: `{
+				"activated": true
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+
+				// Create an unactivated user
+				_, err := app.DB.Exec(
+					context.Background(),
+					`
+						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
+						VALUES ($1, $2, $3, $4, $5, $6, $7)
+					`,
+					"John",
+					"Doe",
+					"test@example.com",
+					"$2a$12$1qAz2wSx3eDc4rFv5tGb5e",
+					"1990-01-01",
+					"M",
+					false,
+				)
+				require.NoError(t, err)
+
+				// Create activation token for the user
+				hash := sha256.Sum256([]byte("r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"))
+				_, err = app.DB.Exec(
+					context.Background(),
+					`INSERT INTO tokens (hash, user_id, expiry, scope) VALUES ($1, $2, $3, $4)`,
+					hash[:],
+					1,
+					time.Now().Add(24*time.Hour),
+					"user_activation",
+				)
+				require.NoError(t, err)
+			},
+			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
+				// Verify that user is now activated
+				var activated bool
+				err := app.DB.QueryRow(context.Background(), "SELECT activated FROM users WHERE id = $1", 1).Scan(&activated)
+				require.NoError(t, err)
+				require.True(t, activated, "user should be activated")
+
+				// Verify that activation token is deleted
+				var tokenCount int
+				err = app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", 1, "user_activation").Scan(&tokenCount)
+				require.NoError(t, err)
+				require.Equal(t, 0, tokenCount, "activation token should be deleted")
 			},
 		},
 	}
