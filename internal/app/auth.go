@@ -129,9 +129,7 @@ func (app *Application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user.Activated = true
-
-	err = app.userRepo.Update(r.Context(), user)
+	err = app.userRepo.ActivateUser(r.Context(), user)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrEditConflict):
@@ -140,12 +138,6 @@ func (app *Application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 			app.serverErrorResponse(w, r, err)
 		}
 
-		return
-	}
-
-	err = app.tokenRepo.DeleteAllForUser(r.Context(), domain.UserActivationScope, user.ID)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
 		return
 	}
 

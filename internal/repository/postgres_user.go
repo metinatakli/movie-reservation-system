@@ -149,6 +149,33 @@ func (p *PostgesUserRepository) Update(ctx context.Context, user *domain.User) e
 	return nil
 }
 
+func (p *PostgesUserRepository) ActivateUser(ctx context.Context, user *domain.User) error {
+	return runInTx(ctx, p.db, func(tx pgx.Tx) error {
+		query := `
+			UPDATE users
+			SET activated = true, updated_at = NOW(), version = version + 1
+			WHERE id = $1 AND version = $2
+			RETURNING version
+		`
+
+		err := tx.QueryRow(ctx, query, user.ID, user.Version).Scan(&user.Version)
+		if err != nil {
+			switch {
+			case errors.Is(err, pgx.ErrNoRows):
+				return domain.ErrEditConflict
+			default:
+				return err
+			}
+		}
+
+		query = `DELETE FROM tokens WHERE scope = $1 AND user_id = $2`
+
+		_, err = tx.Exec(ctx, query, domain.UserActivationScope, user.ID)
+
+		return err
+	})
+}
+
 func (p *PostgesUserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	query := `SELECT id, password_hash 
 		FROM users

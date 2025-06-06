@@ -68,5 +68,6 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetById(ctx context.Context, id int) (*User, error)
 	Update(context.Context, *User) error
+	ActivateUser(context.Context, *User) error
 	Delete(ctx context.Context, user *User) error
 }

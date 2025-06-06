@@ -11,6 +11,7 @@ type MockUserRepo struct {
 	CreateWithTokenFunc func(ctx context.Context, user *domain.User, tokenProvider func(*domain.User) (*domain.Token, error)) (*domain.Token, error)
 	GetByTokenFunc      func(ctx context.Context, hash []byte, scope string) (*domain.User, error)
 	UpdateFunc          func(ctx context.Context, user *domain.User) error
+	ActivateFunc        func(ctx context.Context, user *domain.User) error
 	GetByEmailFunc      func(ctx context.Context, email string) (*domain.User, error)
 	GetByIdFunc         func(ctx context.Context, id int) (*domain.User, error)
 	DeleteFunc          func(ctx context.Context, user *domain.User) error
@@ -30,6 +31,10 @@ func (m *MockUserRepo) GetByToken(ctx context.Context, hash []byte, scope string
 
 func (m *MockUserRepo) Update(ctx context.Context, user *domain.User) error {
 	return m.UpdateFunc(ctx, user)
+}
+
+func (m *MockUserRepo) ActivateUser(ctx context.Context, user *domain.User) error {
+	return m.ActivateFunc(ctx, user)
 }
 
 func (m *MockUserRepo) GetByEmail(ctx context.Context, email string) (*domain.User, error) {

@@ -163,27 +163,10 @@ func TestActivateUser(t *testing.T) {
 		name               string
 		input              api.UserActivationRequest
 		getUserByTokenFunc func(context.Context, []byte, string) (*domain.User, error)
-		updateUserFunc     func(context.Context, *domain.User) error
-		deleteTokenFunc    func(context.Context, string, int) error
+		activateUserFunc   func(context.Context, *domain.User) error
 		wantStatus         int
 		wantErrMessage     string
 	}{
-		{
-			name: "successful activation",
-			input: api.UserActivationRequest{
-				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
-			},
-			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
-				return &domain.User{ID: 1, Activated: false}, nil
-			},
-			updateUserFunc: func(ctx context.Context, u *domain.User) error {
-				return nil
-			},
-			deleteTokenFunc: func(ctx context.Context, scope string, userID int) error {
-				return nil
-			},
-			wantStatus: http.StatusOK,
-		},
 		{
 			name: "invalid token",
 			input: api.UserActivationRequest{
@@ -214,28 +197,24 @@ func TestActivateUser(t *testing.T) {
 			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
 				return &domain.User{ID: 1, Activated: false}, nil
 			},
-			updateUserFunc: func(ctx context.Context, u *domain.User) error {
+			activateUserFunc: func(ctx context.Context, u *domain.User) error {
 				return domain.ErrEditConflict
 			},
 			wantStatus:     http.StatusConflict,
 			wantErrMessage: ErrEditConflict,
 		},
 		{
-			name: "token deletion failure",
+			name: "successful activation",
 			input: api.UserActivationRequest{
 				Token: "O8N3AqxZYwWDq2pXWZXM4yqpyoXKUYXzV5bV0z5dL5k",
 			},
 			getUserByTokenFunc: func(ctx context.Context, hash []byte, scope string) (*domain.User, error) {
 				return &domain.User{ID: 1, Activated: false}, nil
 			},
-			updateUserFunc: func(ctx context.Context, u *domain.User) error {
+			activateUserFunc: func(ctx context.Context, u *domain.User) error {
 				return nil
 			},
-			deleteTokenFunc: func(ctx context.Context, scope string, userID int) error {
-				return fmt.Errorf("failed to delete token")
-			},
-			wantStatus:     http.StatusInternalServerError,
-			wantErrMessage: ErrInternalServer,
+			wantStatus: http.StatusOK,
 		},
 	}
 
@@ -244,10 +223,7 @@ func TestActivateUser(t *testing.T) {
 			app := newTestApplication(func(a *Application) {
 				a.userRepo = &mocks.MockUserRepo{
 					GetByTokenFunc: tt.getUserByTokenFunc,
-					UpdateFunc:     tt.updateUserFunc,
-				}
-				a.tokenRepo = &mocks.MockTokenRepo{
-					DeleteAllForUserFunc: tt.deleteTokenFunc,
+					ActivateFunc:   tt.activateUserFunc,
 				}
 			})
 
