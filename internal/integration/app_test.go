@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/app"
 	"github.com/metinatakli/movie-reservation-system/internal/mailer"
@@ -13,9 +14,10 @@ import (
 )
 
 type TestApp struct {
-	App    *app.Application
-	DB     *pgxpool.Pool
-	Mailer *mailer.MockMailer
+	App            *app.Application
+	DB             *pgxpool.Pool
+	Mailer         *mailer.MockMailer
+	SessionManager *scs.SessionManager
 }
 
 func newTestApp(cfg app.Config) (*TestApp, error) {
@@ -65,8 +67,9 @@ func newTestApp(cfg app.Config) (*TestApp, error) {
 	)
 
 	return &TestApp{
-		App:    application,
-		DB:     db,
-		Mailer: mailer,
+		App:            application,
+		DB:             db,
+		Mailer:         mailer,
+		SessionManager: sessionManager,
 	}, nil
 }

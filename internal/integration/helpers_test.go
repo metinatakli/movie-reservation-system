@@ -18,7 +18,7 @@ var keysToIgnore = map[string]struct{}{
 	"createdAt": {},
 }
 
-func prepareRequest(method, path string, body io.Reader, headers map[string]string) (*http.Request, error) {
+func prepareRequest(method, path string, body io.Reader, headers map[string]string, cookies []http.Cookie) (*http.Request, error) {
 	req := httptest.NewRequest(method, path, body)
 
 	if body != nil {
@@ -27,6 +27,10 @@ func prepareRequest(method, path string, body io.Reader, headers map[string]stri
 
 	for k, v := range headers {
 		req.Header.Set(k, v)
+	}
+
+	for _, cookie := range cookies {
+		req.AddCookie(&cookie)
 	}
 
 	return req, nil

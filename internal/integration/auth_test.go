@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthTestSuite struct {
@@ -325,6 +326,174 @@ func (s *AuthTestSuite) TestActivateUser() {
 
 	for _, scenario := range scenarios {
 		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (s *AuthTestSuite) TestLogin() {
+	scenarios := []Scenario{
+		{
+			Name:             "returns 400 for request with malformed JSON",
+			Method:           "POST",
+			URL:              "/sessions",
+			Body:             strings.NewReader(`{"bad":"json"`),
+			ExpectedStatus:   400,
+			ExpectedResponse: `{"message": "body contains badly-formed JSON"}`,
+		},
+		{
+			Name:   "returns 401 for invalid input data",
+			Method: "POST",
+			URL:    "/sessions",
+			Body: strings.NewReader(`{
+				"email": "invalid-email",
+				"password": "123"
+			}`),
+			ExpectedStatus: 401,
+			ExpectedResponse: `{
+				"message": "Invalid email or password"
+			}`,
+		},
+		{
+			Name:   "returns 401 for non-existent user",
+			Method: "POST",
+			URL:    "/sessions",
+			Body: strings.NewReader(`{
+				"email": "nonexistent@example.com",
+				"password": "Test123!@#"
+			}`),
+			ExpectedStatus: 401,
+			ExpectedResponse: `{
+				"message": "Invalid email or password"
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+			},
+		},
+		{
+			Name:   "returns 401 for incorrect password",
+			Method: "POST",
+			URL:    "/sessions",
+			Body: strings.NewReader(`{
+				"email": "test@example.com",
+				"password": "WrongPass123!@#"
+			}`),
+			ExpectedStatus: 401,
+			ExpectedResponse: `{
+				"message": "Invalid email or password"
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+
+				// Create a user with a known password
+				_, err := app.DB.Exec(
+					context.Background(),
+					`
+						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
+						VALUES ($1, $2, $3, $4, $5, $6, $7)
+					`,
+					"John",
+					"Doe",
+					"test@example.com",
+					"$2a$12$1qAz2wSx3eDc4rFv5tGb5e",
+					"1990-01-01",
+					"M",
+					true,
+				)
+				require.NoError(t, err)
+			},
+		},
+		{
+			Name:   "returns 200 when user is already logged in",
+			Method: "POST",
+			URL:    "/sessions",
+			Body: strings.NewReader(`{
+				"email": "test@example.com",
+				"password": "Test123!@#"
+			}`),
+			ExpectedStatus: 200,
+			ExpectedResponse: `{
+				"message": "You are already logged in"
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+			},
+		},
+		{
+			// TODO: migrate cart data logic should be tested
+			Name:   "successfully logs in a user",
+			Method: "POST",
+			URL:    "/sessions",
+			Body: strings.NewReader(`{
+				"email": "test@example.com",
+				"password": "Test123!@#"
+			}`),
+			ExpectedStatus: 204,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+
+				// Create a user with a known password hash
+				passwordHash, err := bcrypt.GenerateFromPassword([]byte("Test123!@#"), 12)
+				require.NoError(t, err)
+
+				_, err = app.DB.Exec(
+					context.Background(),
+					`
+						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
+						VALUES ($1, $2, $3, $4, $5, $6, $7)
+					`,
+					"John",
+					"Doe",
+					"test@example.com",
+					passwordHash,
+					"1990-01-01",
+					"M",
+					true,
+				)
+				require.NoError(t, err)
+			},
+			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
+				// Verify that session cookie is set in response
+				var sessionCookie *http.Cookie
+				for _, cookie := range res.Cookies() {
+					if cookie.Name == app.SessionManager.Cookie.Name {
+						sessionCookie = cookie
+						break
+					}
+				}
+				require.NotNil(t, sessionCookie, "session cookie must be set")
+
+				// Verify that user's info is loaded session
+				ctx, err := app.SessionManager.Load(context.Background(), sessionCookie.Value)
+				require.NoError(t, err)
+
+				userID := app.SessionManager.GetInt(ctx, "userID")
+				require.Equal(t, 1, userID, "user should be logged in")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
+	ctx := context.Background()
+
+	ctx, err := app.SessionManager.Load(ctx, "")
+	require.NoError(t, err)
+
+	app.SessionManager.Put(ctx, "userID", 1)
+
+	token, _, err := app.SessionManager.Commit(ctx)
+	require.NoError(t, err)
+
+	return []http.Cookie{
+		{
+			Name:  app.SessionManager.Cookie.Name,
+			Value: token,
+			Path:  "/",
+		},
 	}
 }
 

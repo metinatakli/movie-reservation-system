@@ -92,6 +92,7 @@ type Scenario struct {
 	URL              string
 	Body             io.Reader
 	Headers          map[string]string
+	Cookies          []http.Cookie
 	ExpectedStatus   int
 	ExpectedResponse string
 	BeforeTestFunc   func(t testing.TB, app *TestApp)
@@ -100,7 +101,7 @@ type Scenario struct {
 
 func (s Scenario) Run(t *testing.T, testApp *TestApp) {
 	t.Run(s.Name, func(t *testing.T) {
-		req, err := prepareRequest(s.Method, s.URL, s.Body, s.Headers)
+		req, err := prepareRequest(s.Method, s.URL, s.Body, s.Headers, s.Cookies)
 		require.NoError(t, err)
 
 		if s.BeforeTestFunc != nil {
