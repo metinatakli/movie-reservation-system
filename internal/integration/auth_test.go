@@ -7,14 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"crypto/sha256"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthTestSuite struct {
@@ -68,14 +65,14 @@ func (s *AuthTestSuite) TestRegisterUser() {
 			Name:   "returns 400 when email already exists",
 			Method: "POST",
 			URL:    "/users",
-			Body: strings.NewReader(`{
-				"email": "test@example.com",
-				"firstName": "John",
-				"lastName": "Doe",
-				"password": "Test123!@#",
-				"birthDate": "1990-01-01",
-				"gender": "M"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"email": "%s",
+				"firstName": "%s",
+				"lastName": "%s",
+				"password": "%s",
+				"birthDate": "%s",
+				"gender": "%s"
+			}`, TestUserEmail, TestUserFirstName, TestUserLastName, TestUserPassword, TestUserBirthDate, TestUserGender)),
 			ExpectedStatus: 400,
 			ExpectedResponse: `{
 				"message": "invalid input data"
@@ -83,18 +80,17 @@ func (s *AuthTestSuite) TestRegisterUser() {
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				truncateUsersAndTokens(t, app.DB)
 
-				_, err := app.DB.Exec(context.Background(), `
-					INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
-					VALUES ($1, $2, $3, $4, $5, $6, $7)
-				`, "Existing", "User", "test@example.com", "$2a$12$1qAz2wSx3eDc4rFv5tGb5e", "1990-01-01", "M", false)
-				require.NoError(t, err)
+				// Create an existing user
+				user := defaultTestUser()
+				user.Activated = false
+				insertTestUser(t, app.DB, user)
 
 				app.Mailer.Reset()
 			},
 			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
 				// Verify that no new user was created
 				var userCount int
-				err := app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM users WHERE email = $1", "test@example.com").Scan(&userCount)
+				err := app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM users WHERE email = $1", TestUserEmail).Scan(&userCount)
 				require.NoError(t, err)
 				require.Equal(t, 1, userCount, "should not create a new user")
 
@@ -102,7 +98,10 @@ func (s *AuthTestSuite) TestRegisterUser() {
 				var tokenCount int
 				err = app.DB.QueryRow(
 					context.Background(),
-					"SELECT COUNT(*) FROM tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1) AND scope = $2", "test@example.com", "user_activation").Scan(&tokenCount)
+					"SELECT COUNT(*) FROM tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1) AND scope = $2",
+					TestUserEmail,
+					TestTokenScope,
+				).Scan(&tokenCount)
 				require.NoError(t, err)
 				require.Equal(t, 0, tokenCount, "should not create a new activation token")
 
@@ -115,25 +114,25 @@ func (s *AuthTestSuite) TestRegisterUser() {
 			Name:   "successfully registers a new user",
 			Method: "POST",
 			URL:    "/users",
-			Body: strings.NewReader(`{
-				"email": "test@example.com",
-				"firstName": "John",
-				"lastName": "Doe",
-				"password": "Test123!@#",
-				"birthDate": "1990-01-01",
-				"gender": "M"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"email": "%s",
+				"firstName": "%s",
+				"lastName": "%s",
+				"password": "%s",
+				"birthDate": "%s",
+				"gender": "%s"
+			}`, TestUserEmail, TestUserFirstName, TestUserLastName, TestUserPassword, TestUserBirthDate, TestUserGender)),
 			ExpectedStatus: 202,
-			ExpectedResponse: `{
+			ExpectedResponse: fmt.Sprintf(`{
 				"id": 1,
-				"firstName": "John",
-				"lastName": "Doe",
-				"email": "test@example.com",
-				"birthDate": "1990-01-01",
-				"gender": "M",
+				"firstName": "%s",
+				"lastName": "%s",
+				"email": "%s",
+				"birthDate": "%s",
+				"gender": "%s",
 				"activated": false,
 				"version": 1
-			}`,
+			}`, TestUserFirstName, TestUserLastName, TestUserEmail, TestUserBirthDate, TestUserGender),
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				truncateUsersAndTokens(t, app.DB)
 
@@ -146,16 +145,16 @@ func (s *AuthTestSuite) TestRegisterUser() {
 					Email     string
 					Activated bool
 				}
-				err := app.DB.QueryRow(context.Background(), "SELECT id, email, activated FROM users WHERE email = $1", "test@example.com").Scan(
+				err := app.DB.QueryRow(context.Background(), "SELECT id, email, activated FROM users WHERE email = $1", TestUserEmail).Scan(
 					&user.ID, &user.Email, &user.Activated,
 				)
 				require.NoError(t, err)
-				require.Equal(t, "test@example.com", user.Email)
+				require.Equal(t, TestUserEmail, user.Email)
 				require.False(t, user.Activated)
 
 				// Verify that activation has been created
 				var tokenCount int
-				err = app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", user.ID, "user_activation").Scan(&tokenCount)
+				err = app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", user.ID, TestTokenScope).Scan(&tokenCount)
 				require.NoError(t, err)
 				require.Equal(t, 1, tokenCount)
 
@@ -164,7 +163,7 @@ func (s *AuthTestSuite) TestRegisterUser() {
 				require.Len(t, emails, 1)
 
 				email := emails[0]
-				require.Equal(t, "test@example.com", email.Recipient)
+				require.Equal(t, TestUserEmail, email.Recipient)
 				require.Equal(t, "user_welcome.tmpl", email.TemplateFile)
 
 				data, ok := email.Data.(map[string]any)
@@ -209,9 +208,9 @@ func (s *AuthTestSuite) TestActivateUser() {
 			Name:   "returns 404 for non-existent token",
 			Method: "PUT",
 			URL:    "/users/activation",
-			Body: strings.NewReader(`{
-				"token": "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"token": "%s"
+			}`, TestActivationToken)),
 			ExpectedStatus: 404,
 			ExpectedResponse: `{
 				"message": "The requested resource not found"
@@ -224,9 +223,9 @@ func (s *AuthTestSuite) TestActivateUser() {
 			Name:   "returns 409 for already activated user",
 			Method: "PUT",
 			URL:    "/users/activation",
-			Body: strings.NewReader(`{
-				"token": "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"token": "%s"
+			}`, TestActivationToken)),
 			ExpectedStatus: 409,
 			ExpectedResponse: `{
 				"message": "Unable to update the record due to an edit conflict, please try again"
@@ -235,45 +234,22 @@ func (s *AuthTestSuite) TestActivateUser() {
 				truncateUsersAndTokens(t, app.DB)
 
 				// Create an activated user
-				_, err := app.DB.Exec(
-					context.Background(),
-					`
-						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
-						VALUES ($1, $2, $3, $4, $5, $6, $7)
-					`,
-					"John",
-					"Doe",
-					"test@example.com",
-					"$2a$12$1qAz2wSx3eDc4rFv5tGb5e",
-					"1990-01-01",
-					"M",
-					true,
-				)
-				require.NoError(t, err)
+				user := defaultTestUser()
+				user.Activated = true
+				userID := insertTestUser(t, app.DB, user)
 
 				// Create activation token for the user
-				hash := sha256.Sum256([]byte("r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"))
-				_, err = app.DB.Exec(
-					context.Background(),
-					`
-						INSERT INTO tokens (hash, user_id, expiry, scope)
-						VALUES ($1, $2, $3, $4)
-					`,
-					hash[:],
-					1,
-					time.Now().Add(24*time.Hour),
-					"user_activation",
-				)
-				require.NoError(t, err)
+				token := defaultTestToken(userID)
+				insertTestToken(t, app.DB, token)
 			},
 		},
 		{
 			Name:   "successfully activates a user",
 			Method: "PUT",
 			URL:    "/users/activation",
-			Body: strings.NewReader(`{
-				"token": "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"token": "%s"
+			}`, TestActivationToken)),
 			ExpectedStatus: 200,
 			ExpectedResponse: `{
 				"activated": true
@@ -282,33 +258,12 @@ func (s *AuthTestSuite) TestActivateUser() {
 				truncateUsersAndTokens(t, app.DB)
 
 				// Create an unactivated user
-				_, err := app.DB.Exec(
-					context.Background(),
-					`
-						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
-						VALUES ($1, $2, $3, $4, $5, $6, $7)
-					`,
-					"John",
-					"Doe",
-					"test@example.com",
-					"$2a$12$1qAz2wSx3eDc4rFv5tGb5e",
-					"1990-01-01",
-					"M",
-					false,
-				)
-				require.NoError(t, err)
+				user := defaultTestUser()
+				userID := insertTestUser(t, app.DB, user)
 
 				// Create activation token for the user
-				hash := sha256.Sum256([]byte("r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"))
-				_, err = app.DB.Exec(
-					context.Background(),
-					`INSERT INTO tokens (hash, user_id, expiry, scope) VALUES ($1, $2, $3, $4)`,
-					hash[:],
-					1,
-					time.Now().Add(24*time.Hour),
-					"user_activation",
-				)
-				require.NoError(t, err)
+				token := defaultTestToken(userID)
+				insertTestToken(t, app.DB, token)
 			},
 			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
 				// Verify that user is now activated
@@ -319,7 +274,7 @@ func (s *AuthTestSuite) TestActivateUser() {
 
 				// Verify that activation token is deleted
 				var tokenCount int
-				err = app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", 1, "user_activation").Scan(&tokenCount)
+				err = app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", 1, TestTokenScope).Scan(&tokenCount)
 				require.NoError(t, err)
 				require.Equal(t, 0, tokenCount, "activation token should be deleted")
 			},
@@ -374,10 +329,10 @@ func (s *AuthTestSuite) TestLogin() {
 			Name:   "returns 401 for incorrect password",
 			Method: "POST",
 			URL:    "/sessions",
-			Body: strings.NewReader(`{
-				"email": "test@example.com",
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"email": "%s",
 				"password": "WrongPass123!@#"
-			}`),
+			}`, TestUserEmail)),
 			ExpectedStatus: 401,
 			ExpectedResponse: `{
 				"message": "Invalid email or password"
@@ -386,31 +341,18 @@ func (s *AuthTestSuite) TestLogin() {
 				truncateUsersAndTokens(t, app.DB)
 
 				// Create a user with a known password
-				_, err := app.DB.Exec(
-					context.Background(),
-					`
-						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
-						VALUES ($1, $2, $3, $4, $5, $6, $7)
-					`,
-					"John",
-					"Doe",
-					"test@example.com",
-					"$2a$12$1qAz2wSx3eDc4rFv5tGb5e",
-					"1990-01-01",
-					"M",
-					true,
-				)
-				require.NoError(t, err)
+				user := defaultTestUser()
+				insertTestUser(t, app.DB, user)
 			},
 		},
 		{
 			Name:   "returns 200 when user is already logged in",
 			Method: "POST",
 			URL:    "/sessions",
-			Body: strings.NewReader(`{
-				"email": "test@example.com",
-				"password": "Test123!@#"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"email": "%s",
+				"password": "%s"
+			}`, TestUserEmail, TestUserPassword)),
 			ExpectedStatus: 200,
 			ExpectedResponse: `{
 				"message": "You are already logged in"
@@ -425,33 +367,17 @@ func (s *AuthTestSuite) TestLogin() {
 			Name:   "successfully logs in a user",
 			Method: "POST",
 			URL:    "/sessions",
-			Body: strings.NewReader(`{
-				"email": "test@example.com",
-				"password": "Test123!@#"
-			}`),
+			Body: strings.NewReader(fmt.Sprintf(`{
+				"email": "%s",
+				"password": "%s"
+			}`, TestUserEmail, TestUserPassword)),
 			ExpectedStatus: 204,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				truncateUsersAndTokens(t, app.DB)
 
-				// Create a user with a known password hash
-				passwordHash, err := bcrypt.GenerateFromPassword([]byte("Test123!@#"), 12)
-				require.NoError(t, err)
-
-				_, err = app.DB.Exec(
-					context.Background(),
-					`
-						INSERT INTO users (first_name, last_name, email, password_hash, birth_date, gender, activated)
-						VALUES ($1, $2, $3, $4, $5, $6, $7)
-					`,
-					"John",
-					"Doe",
-					"test@example.com",
-					passwordHash,
-					"1990-01-01",
-					"M",
-					true,
-				)
-				require.NoError(t, err)
+				user := defaultTestUser()
+				user.Activated = true
+				insertTestUser(t, app.DB, user)
 			},
 			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
 				// Verify that session cookie is set in response
@@ -541,11 +467,4 @@ func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
 			Path:    "/",
 		},
 	}
-}
-
-func truncateUsersAndTokens(t testing.TB, db *pgxpool.Pool) {
-	_, err := db.Exec(context.Background(), "TRUNCATE tokens RESTART IDENTITY CASCADE")
-	require.NoError(t, err)
-	_, err = db.Exec(context.Background(), "TRUNCATE users RESTART IDENTITY CASCADE")
-	require.NoError(t, err)
 }
