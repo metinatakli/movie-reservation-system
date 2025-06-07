@@ -11,6 +11,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/payment"
 	"github.com/metinatakli/movie-reservation-system/internal/repository"
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
+	"github.com/redis/go-redis/v9"
 )
 
 type TestApp struct {
@@ -18,6 +19,7 @@ type TestApp struct {
 	DB             *pgxpool.Pool
 	Mailer         *mailer.MockMailer
 	SessionManager *scs.SessionManager
+	RedisClient    redis.UniversalClient
 }
 
 func newTestApp(cfg app.Config) (*TestApp, error) {
@@ -69,6 +71,7 @@ func newTestApp(cfg app.Config) (*TestApp, error) {
 	return &TestApp{
 		App:            application,
 		DB:             db,
+		RedisClient:    redisClient,
 		Mailer:         mailer,
 		SessionManager: sessionManager,
 	}, nil

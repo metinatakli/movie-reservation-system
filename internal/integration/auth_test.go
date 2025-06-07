@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/crypto/bcrypt"
@@ -477,6 +479,49 @@ func (s *AuthTestSuite) TestLogin() {
 	}
 }
 
+func (s *AuthTestSuite) TestLogout() {
+	scenarios := []Scenario{
+		{
+			Name:           "returns 404 when user is not logged in",
+			Method:         "DELETE",
+			URL:            "/sessions",
+			ExpectedStatus: 404,
+			ExpectedResponse: `{
+				"message": "The requested resource not found"
+			}`,
+		},
+		{
+			Name:           "returns 204 when user is successfully logged out",
+			Method:         "DELETE",
+			URL:            "/sessions",
+			ExpectedStatus: 204,
+			Cookies:        s.app.authenticatedUserCookies(s.T()),
+			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
+				// Verify that session cookie is set in response
+				var sessionCookie *http.Cookie
+				for _, cookie := range res.Cookies() {
+					if cookie.Name == app.SessionManager.Cookie.Name {
+						sessionCookie = cookie
+						break
+					}
+				}
+				require.NotNil(t, sessionCookie, "session cookie must be set")
+				require.True(t, sessionCookie.Expires.Before(time.Now()), "response cookie should have an expiry in the past")
+
+				// Verify that user's info is removed from Redis
+				redisKey := fmt.Sprintf("scs:session:%s", sessionCookie.Value)
+
+				err := app.RedisClient.Get(context.Background(), redisKey).Err()
+				require.ErrorIs(t, err, redis.Nil, "session key must be deleted from Redis after logout")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
 func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
 	ctx := context.Background()
 
@@ -485,14 +530,15 @@ func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
 
 	app.SessionManager.Put(ctx, "userID", 1)
 
-	token, _, err := app.SessionManager.Commit(ctx)
+	token, expiry, err := app.SessionManager.Commit(ctx)
 	require.NoError(t, err)
 
 	return []http.Cookie{
 		{
-			Name:  app.SessionManager.Cookie.Name,
-			Value: token,
-			Path:  "/",
+			Name:    app.SessionManager.Cookie.Name,
+			Value:   token,
+			Expires: expiry,
+			Path:    "/",
 		},
 	}
 }
