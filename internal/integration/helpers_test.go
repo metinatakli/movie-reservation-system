@@ -42,6 +42,8 @@ func prepareRequest(method, path string, body io.Reader, headers map[string]stri
 }
 
 func compareResponse(t *testing.T, body io.Reader, expectedResponse string) {
+	t.Helper()
+
 	var actual map[string]any
 	require.NoError(t, json.NewDecoder(body).Decode(&actual))
 
@@ -100,6 +102,8 @@ func defaultTestToken(userID int) *domain.Token {
 
 // insertTestUser inserts a user into the DB using the domain.User struct.
 func insertTestUser(t testing.TB, db *pgxpool.Pool, user *domain.User) int {
+	t.Helper()
+
 	var userID int
 	err := db.QueryRow(
 		context.Background(),
@@ -121,6 +125,8 @@ func insertTestUser(t testing.TB, db *pgxpool.Pool, user *domain.User) int {
 
 // insertTestToken inserts a token into the DB using the domain.Token struct.
 func insertTestToken(t testing.TB, db *pgxpool.Pool, token *domain.Token) {
+	t.Helper()
+
 	_, err := db.Exec(
 		context.Background(),
 		`INSERT INTO tokens (hash, user_id, expiry, scope) VALUES ($1, $2, $3, $4)`,
@@ -136,6 +142,8 @@ func insertTestToken(t testing.TB, db *pgxpool.Pool, token *domain.Token) {
 // truncateUsersAndTokens truncates the users and tokens tables and resets their identity columns.
 // It is used to clean up the database before each test to ensure a clean state.
 func truncateUsersAndTokens(t testing.TB, db *pgxpool.Pool) {
+	t.Helper()
+
 	_, err := db.Exec(context.Background(), "TRUNCATE tokens RESTART IDENTITY CASCADE")
 	require.NoError(t, err)
 	_, err = db.Exec(context.Background(), "TRUNCATE users RESTART IDENTITY CASCADE")

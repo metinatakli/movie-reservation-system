@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -24,66 +25,78 @@ const (
 	cacheImageName = "redis:7"
 )
 
-type BaseSuite struct {
-	suite.Suite
-	app            *TestApp
-	dbContainer    *PostgresContainer
-	cacheContainer *RedisContainer
-	server         *httptest.Server
-}
+var testApp *TestApp
 
-func (s *BaseSuite) SetupSuite() {
+func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	postgresContainer, err := getDbContainer(ctx)
+	// Setup containers
+	dbContainer, err := getDbContainer(ctx)
 	if err != nil {
-		log.Printf("failed to start container: %s", err)
-		return
+		log.Printf("failed to spin db container up: %s", err)
+		os.Exit(1)
 	}
 
-	redisContainer, err := getCacheContainer(ctx)
+	cacheContainer, err := getCacheContainer(ctx)
 	if err != nil {
-		log.Printf("failed to start container: %s", err)
-		return
+		log.Printf("failed to spin cache container up: %s", err)
+		os.Exit(1)
 	}
 
-	s.dbContainer = postgresContainer
-	s.cacheContainer = redisContainer
-
+	// Setup test app
 	cfg := app.Config{
 		Port: 3000,
 		Env:  "test",
 		DB: app.DBConfig{
-			DSN:          postgresContainer.ConnectionString,
+			DSN:          dbContainer.ConnectionString,
 			MaxOpenConns: 25,
 			MaxIdleTime:  2 * time.Minute,
 		},
 		Redis: app.RedisConfig{
-			URL:          redisContainer.ConnectionString,
+			URL:          cacheContainer.ConnectionString,
 			MaxOpenConns: 10,
 			MaxIdleConns: 10,
 			MaxIdleTime:  2 * time.Minute,
 		},
 	}
 
-	testApp, err := newTestApp(cfg)
+	testApp, err = newTestApp(cfg)
 	if err != nil {
 		log.Printf("cannot initialize app: %s", err)
-		return
+		os.Exit(1)
 	}
 
+	// Run all tests
+	code := m.Run()
+
+	// Clean up containers after all tests are done
+	if dbContainer != nil {
+		if err := testcontainers.TerminateContainer(dbContainer.Container.Container); err != nil {
+			log.Printf("failed to terminate db container: %s", err)
+		}
+	}
+	if cacheContainer != nil {
+		if err := testcontainers.TerminateContainer(cacheContainer.Container); err != nil {
+			log.Printf("failed to terminate cache container: %s", err)
+		}
+	}
+
+	os.Exit(code)
+}
+
+type BaseSuite struct {
+	suite.Suite
+	app    *TestApp
+	server *httptest.Server
+}
+
+func (s *BaseSuite) SetupSuite() {
 	s.app = testApp
 	s.server = httptest.NewServer(testApp.App.Routes())
 }
 
 func (s *BaseSuite) TearDownSuite() {
 	s.server.Close()
-	if err := testcontainers.TerminateContainer(s.dbContainer.Container.Container); err != nil {
-		log.Printf("failed to terminate container: %s", err)
-	}
-	if err := testcontainers.TerminateContainer(s.cacheContainer.Container); err != nil {
-		log.Printf("failed to terminate container: %s", err)
-	}
 }
 
 type Scenario struct {
@@ -100,6 +113,8 @@ type Scenario struct {
 }
 
 func (s Scenario) Run(t *testing.T, testApp *TestApp) {
+	t.Helper()
+
 	t.Run(s.Name, func(t *testing.T) {
 		req, err := prepareRequest(s.Method, s.URL, s.Body, s.Headers, s.Cookies)
 		require.NoError(t, err)
