@@ -6,6 +6,7 @@ import (
 
 const (
 	// User related constants
+	TestUserId        = 1
 	TestUserFirstName = "John"
 	TestUserLastName  = "Doe"
 	TestUserEmail     = "test@example.com"

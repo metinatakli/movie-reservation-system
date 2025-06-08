@@ -1,10 +1,14 @@
 package integration_test
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -163,6 +167,107 @@ func (s *UserTestSuite) TestUpdateUser() {
 				user := defaultTestUser()
 				user.Activated = true
 				insertTestUser(t, app.DB, user)
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (s *UserTestSuite) TestInitiateUserDeletion() {
+	scenarios := []Scenario{
+		{
+			Name:           "returns 401 when user is not logged in",
+			Method:         "POST",
+			URL:            "/users/me/deletion-request",
+			ExpectedStatus: 401,
+			ExpectedResponse: `{
+				"message": "You must be authenticated to access this resource"
+			}`,
+		},
+		{
+			Name:           "returns 400 for request with malformed JSON",
+			Method:         "POST",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(`{"bad":"json"`),
+			ExpectedStatus: 400,
+			ExpectedResponse: `{
+				"message": "body contains badly-formed JSON"
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+		},
+		{
+			Name:           "returns 401 for invalid password",
+			Method:         "POST",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(`{"password": "wrongpassword"}`),
+			ExpectedStatus: 401,
+			ExpectedResponse: `{
+				"message": "Invalid email or password"
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+
+				// Create a test user
+				user := defaultTestUser()
+				user.Activated = true
+				insertTestUser(t, app.DB, user)
+			},
+		},
+		{
+			Name:           "returns 404 when user not found in DB",
+			Method:         "POST",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(fmt.Sprintf(`{"password": "%s"}`, TestUserPassword)),
+			ExpectedStatus: 404,
+			ExpectedResponse: `{
+				"message": "The requested resource not found"
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+			},
+		},
+		{
+			Name:             "successfully initiates user deletion",
+			Method:           "POST",
+			URL:              "/users/me/deletion-request",
+			Body:             strings.NewReader(fmt.Sprintf(`{"password": "%s"}`, TestUserPassword)),
+			ExpectedStatus:   202,
+			ExpectedResponse: ``,
+			Cookies:          s.app.authenticatedUserCookies(s.T()),
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+
+				// Create a test user
+				user := defaultTestUser()
+				user.Activated = true
+				insertTestUser(t, app.DB, user)
+
+				app.Mailer.Reset()
+			},
+			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
+				// Verify that deletion token has been created
+				var tokenCount int
+				err := app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", 1, domain.UserDeletionScope).Scan(&tokenCount)
+				require.NoError(t, err)
+				require.Equal(t, 1, tokenCount)
+
+				// Verify that email was sent
+				emails := app.Mailer.GetSentEmails()
+				require.Len(t, emails, 1)
+
+				email := emails[0]
+				require.Equal(t, TestUserEmail, email.Recipient)
+				require.Equal(t, "user_deletion.tmpl", email.TemplateFile)
+
+				data, ok := email.Data.(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, 1, data["userID"])
+				require.NotEmpty(t, data["deletionToken"])
 			},
 		},
 	}

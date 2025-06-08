@@ -154,3 +154,26 @@ func sha256Sum(s string) []byte {
 	h := sha256.Sum256([]byte(s))
 	return h[:]
 }
+
+// authenticatedUserCookies creates a session cookie for an authenticated user with ID 1.
+// This is used in tests to simulate an authenticated user session.
+func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
+	ctx := context.Background()
+
+	ctx, err := app.SessionManager.Load(ctx, "")
+	require.NoError(t, err)
+
+	app.SessionManager.Put(ctx, "userID", TestUserId)
+
+	token, expiry, err := app.SessionManager.Commit(ctx)
+	require.NoError(t, err)
+
+	return []http.Cookie{
+		{
+			Name:    app.SessionManager.Cookie.Name,
+			Value:   token,
+			Expires: expiry,
+			Path:    "/",
+		},
+	}
+}

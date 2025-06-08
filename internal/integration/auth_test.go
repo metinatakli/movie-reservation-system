@@ -447,24 +447,3 @@ func (s *AuthTestSuite) TestLogout() {
 		scenario.Run(s.T(), s.app)
 	}
 }
-
-func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
-	ctx := context.Background()
-
-	ctx, err := app.SessionManager.Load(ctx, "")
-	require.NoError(t, err)
-
-	app.SessionManager.Put(ctx, "userID", 1)
-
-	token, expiry, err := app.SessionManager.Commit(ctx)
-	require.NoError(t, err)
-
-	return []http.Cookie{
-		{
-			Name:    app.SessionManager.Cookie.Name,
-			Value:   token,
-			Expires: expiry,
-			Path:    "/",
-		},
-	}
-}
