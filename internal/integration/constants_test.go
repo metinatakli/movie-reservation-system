@@ -15,6 +15,6 @@ const (
 	TestUserGender    = domain.Male
 
 	// Token related constants
-	TestActivationToken = "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
-	TestTokenScope      = domain.UserActivationScope
+	TestToken      = "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
+	TestTokenScope = domain.UserActivationScope
 )

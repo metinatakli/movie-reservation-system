@@ -9,6 +9,7 @@ import (
 
 	"time"
 
+	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -210,7 +211,7 @@ func (s *AuthTestSuite) TestActivateUser() {
 			URL:    "/users/activation",
 			Body: strings.NewReader(fmt.Sprintf(`{
 				"token": "%s"
-			}`, TestActivationToken)),
+			}`, TestToken)),
 			ExpectedStatus: 404,
 			ExpectedResponse: `{
 				"message": "The requested resource not found"
@@ -225,7 +226,7 @@ func (s *AuthTestSuite) TestActivateUser() {
 			URL:    "/users/activation",
 			Body: strings.NewReader(fmt.Sprintf(`{
 				"token": "%s"
-			}`, TestActivationToken)),
+			}`, TestToken)),
 			ExpectedStatus: 409,
 			ExpectedResponse: `{
 				"message": "Unable to update the record due to an edit conflict, please try again"
@@ -239,7 +240,7 @@ func (s *AuthTestSuite) TestActivateUser() {
 				userID := insertTestUser(t, app.DB, user)
 
 				// Create activation token for the user
-				token := defaultTestToken(userID)
+				token := defaultTestToken(userID, domain.UserActivationScope)
 				insertTestToken(t, app.DB, token)
 			},
 		},
@@ -249,7 +250,7 @@ func (s *AuthTestSuite) TestActivateUser() {
 			URL:    "/users/activation",
 			Body: strings.NewReader(fmt.Sprintf(`{
 				"token": "%s"
-			}`, TestActivationToken)),
+			}`, TestToken)),
 			ExpectedStatus: 200,
 			ExpectedResponse: `{
 				"activated": true
@@ -262,7 +263,7 @@ func (s *AuthTestSuite) TestActivateUser() {
 				userID := insertTestUser(t, app.DB, user)
 
 				// Create activation token for the user
-				token := defaultTestToken(userID)
+				token := defaultTestToken(userID, domain.UserActivationScope)
 				insertTestToken(t, app.DB, token)
 			},
 			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {

@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -247,7 +249,9 @@ func (s *UserTestSuite) TestInitiateUserDeletion() {
 				user.Activated = true
 				insertTestUser(t, app.DB, user)
 
-				app.Mailer.Reset()
+				// Create a token for the user after user is created
+				token := defaultTestToken(1, domain.UserDeletionScope)
+				insertTestToken(t, app.DB, token)
 			},
 			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
 				// Verify that deletion token has been created
@@ -268,6 +272,120 @@ func (s *UserTestSuite) TestInitiateUserDeletion() {
 				require.True(t, ok)
 				require.Equal(t, 1, data["userID"])
 				require.NotEmpty(t, data["deletionToken"])
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (s *UserTestSuite) TestCompleteUserDeletion() {
+	scenarios := []Scenario{
+		{
+			Name:           "returns 401 when user is not logged in",
+			Method:         "PUT",
+			URL:            "/users/me/deletion-request",
+			ExpectedStatus: 401,
+			ExpectedResponse: `{
+				"message": "You must be authenticated to access this resource"
+			}`,
+		},
+		{
+			Name:           "returns 400 for request with malformed JSON",
+			Method:         "PUT",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(`{"bad":"json"`),
+			ExpectedStatus: 400,
+			ExpectedResponse: `{
+				"message": "body contains badly-formed JSON"
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+		},
+		{
+			Name:           "returns 422 for invalid input data",
+			Method:         "PUT",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(`{"token": ""}`),
+			ExpectedStatus: 422,
+			ExpectedResponse: `{
+				"message": "One or more fields have invalid values",
+				"validationErrors": [
+					{"field": "Token", "issue": "is required"}
+				]
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+		},
+		{
+			Name:           "returns 404 when token not found",
+			Method:         "PUT",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(fmt.Sprintf(`{"token": "%s"}`, TestToken)),
+			ExpectedStatus: 404,
+			ExpectedResponse: `{
+				"message": "The requested resource not found"
+			}`,
+			Cookies: s.app.authenticatedUserCookies(s.T()),
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+				app.Mailer.Reset()
+
+				// Create a test user
+				user := defaultTestUser()
+				user.Activated = true
+				insertTestUser(t, app.DB, user)
+			},
+		},
+		{
+			Name:           "successfully completes user deletion",
+			Method:         "PUT",
+			URL:            "/users/me/deletion-request",
+			Body:           strings.NewReader(fmt.Sprintf(`{"token": "%s"}`, TestToken)),
+			ExpectedStatus: 204,
+			Cookies:        s.app.authenticatedUserCookies(s.T()),
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateUsersAndTokens(t, app.DB)
+				app.Mailer.Reset()
+
+				// Create a test user
+				user := defaultTestUser()
+				user.Activated = true
+				insertTestUser(t, app.DB, user)
+
+				// Create a token for the user
+				token := defaultTestToken(1, domain.UserDeletionScope)
+				insertTestToken(t, app.DB, token)
+			},
+			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
+				// Verify that user has been soft-deleted
+				var isActive bool
+				err := app.DB.QueryRow(context.Background(), "SELECT is_active FROM users WHERE id = $1", 1).Scan(&isActive)
+				require.NoError(t, err)
+				require.False(t, isActive)
+
+				// Verify that token has been deleted
+				var tokenCount int
+				err = app.DB.QueryRow(context.Background(), "SELECT COUNT(*) FROM tokens WHERE user_id = $1 AND scope = $2", 1, domain.UserDeletionScope).Scan(&tokenCount)
+				require.NoError(t, err)
+				require.Equal(t, 0, tokenCount)
+
+				// Verify that session cookie is set in response
+				var sessionCookie *http.Cookie
+				for _, cookie := range res.Cookies() {
+					if cookie.Name == app.SessionManager.Cookie.Name {
+						sessionCookie = cookie
+						break
+					}
+				}
+				require.NotNil(t, sessionCookie, "session cookie must be set")
+				require.True(t, sessionCookie.Expires.Before(time.Now()), "response cookie should have an expiry in the past")
+
+				// Verify that user's info is removed from Redis
+				redisKey := fmt.Sprintf("scs:session:%s", sessionCookie.Value)
+
+				err = app.RedisClient.Get(context.Background(), redisKey).Err()
+				require.ErrorIs(t, err, redis.Nil, "session key must be deleted from Redis after logout")
 			},
 		},
 	}

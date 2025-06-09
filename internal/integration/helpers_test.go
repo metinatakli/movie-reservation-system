@@ -90,13 +90,13 @@ func defaultTestUser() *domain.User {
 }
 
 // defaultTestToken returns a *domain.Token with default test values.
-func defaultTestToken(userID int) *domain.Token {
+func defaultTestToken(userID int, scope string) *domain.Token {
 	return &domain.Token{
-		Plaintext: TestActivationToken,
-		Hash:      sha256Sum(TestActivationToken),
+		Plaintext: TestToken,
+		Hash:      sha256Sum(TestToken),
 		UserId:    int64(userID),
 		Expiry:    time.Now().Add(24 * time.Hour),
-		Scope:     TestTokenScope,
+		Scope:     scope,
 	}
 }
 
