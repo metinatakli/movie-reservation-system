@@ -230,3 +230,137 @@ func (s *MovieTestSuite) TestShowMovieDetails() {
 		scenario.Run(s.T(), s.app)
 	}
 }
+
+func (s *MovieTestSuite) TestGetMovieShowtimes() {
+	testDate := "2095-01-01"
+	scenarios := []Scenario{
+		{
+			Name:             "returns 400 for invalid movie ID",
+			Method:           "GET",
+			URL:              fmt.Sprintf("/movies/0/showtimes?latitude=40.0&longitude=30.0&date=%s", testDate),
+			ExpectedStatus:   400,
+			ExpectedResponse: `{"message": "movie ID must be greater than zero"}`,
+		},
+		{
+			Name:           "returns 422 for missing required params",
+			Method:         "GET",
+			URL:            "/movies/1/showtimes",
+			ExpectedStatus: 422,
+			ExpectedResponse: `{
+				"message": "One or more fields have invalid values",
+				"validationErrors": [
+					{"field": "Latitude", "issue": "is required"},
+					{"field": "Longitude", "issue": "is required"},
+					{"field": "Date", "issue": "is required"}
+				]
+			}`,
+		},
+		{
+			Name:             "returns 404 when movie not found",
+			Method:           "GET",
+			URL:              fmt.Sprintf("/movies/999/showtimes?latitude=40.0&longitude=30.0&date=%s", testDate),
+			ExpectedStatus:   404,
+			ExpectedResponse: `{"message": "The requested resource not found"}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateAllMovieShowtimeTables(t, app.DB)
+			},
+		},
+		{
+			Name:           "successfully retrieves movie showtimes (all fields)",
+			Method:         "GET",
+			URL:            fmt.Sprintf("/movies/1/showtimes?latitude=40.0&longitude=30.0&date=%s", testDate),
+			ExpectedStatus: 200,
+			ExpectedResponse: `{
+				"date": "2095-01-01",
+				"theaters": [
+					{
+						"id": 1,
+						"name": "Test Theater 1",
+						"address": "123 Main St",
+						"city": "Test City",
+						"district": "Central",
+						"distance": 0,
+						"amenities": [],
+						"halls": [
+							{
+								"id": 1,
+								"name": "Hall 1A",
+								"amenities": [
+									{"id": 1, "name": "IMAX", "description": "Large-format screen"}
+								],
+								"showtimes": [
+									{"id": 1, "startTime": "10:00", "startDateTime": "2095-01-01T10:00:00Z", "price": 10.0, "status": "AVAILABLE"},
+									{"id": 2, "startTime": "14:00", "startDateTime": "2095-01-01T14:00:00Z", "price": 12.0, "status": "AVAILABLE"}
+								]
+							},
+							{
+								"id": 2,
+								"name": "Hall 1B",
+								"amenities": [
+									{"id": 2, "name": "Dolby Atmos", "description": "Immersive sound system"}
+								],
+								"showtimes": [
+									{"id": 3, "startTime": "10:00", "startDateTime": "2095-01-01T10:00:00Z", "price": 11.0, "status": "AVAILABLE"},
+									{"id": 4, "startTime": "14:00", "startDateTime": "2095-01-01T14:00:00Z", "price": 13.0, "status": "AVAILABLE"}
+								]
+							}
+						]
+					},
+					{
+						"id": 2,
+						"name": "Test Theater 2",
+						"address": "456 Side St",
+						"city": "Test City",
+						"district": "North",
+						"distance": 0,
+						"amenities": [],
+						"halls": [
+							{
+								"id": 3,
+								"name": "Hall 2A",
+								"amenities": [
+									{"id": 1, "name": "IMAX", "description": "Large-format screen"}
+								],
+								"showtimes": [
+									{"id": 5, "startTime": "10:00", "startDateTime": "2095-01-01T10:00:00Z", "price": 10.5, "status": "AVAILABLE"},
+									{"id": 6, "startTime": "14:00", "startDateTime": "2095-01-01T14:00:00Z", "price": 12.5, "status": "AVAILABLE"}
+								]
+							},
+							{
+								"id": 4,
+								"name": "Hall 2B",
+								"amenities": [
+									{"id": 2, "name": "Dolby Atmos", "description": "Immersive sound system"}
+								],
+								"showtimes": [
+									{"id": 7, "startTime": "10:00", "startDateTime": "2095-01-01T10:00:00Z", "price": 11.5, "status": "AVAILABLE"},
+									{"id": 8, "startTime": "14:00", "startDateTime": "2095-01-01T14:00:00Z", "price": 13.5, "status": "AVAILABLE"}
+								]
+							}
+						]
+					}
+				],
+				"metadata": {
+					"currentPage": 1,
+					"firstPage": 1,
+					"lastPage": 1,
+					"pageSize": 10,
+					"totalRecords": 2
+				}
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateAllMovieShowtimeTables(t, app.DB)
+				executeSQLFile(t, app.DB, "testdata/movies.sql")
+				executeSQLFile(t, app.DB, "testdata/theaters.sql")
+				executeSQLFile(t, app.DB, "testdata/halls.sql")
+				executeSQLFile(t, app.DB, "testdata/amenities.sql")
+				executeSQLFile(t, app.DB, "testdata/hall_amenities.sql")
+				executeSQLFile(t, app.DB, "testdata/showtimes.sql")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}

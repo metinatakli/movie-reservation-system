@@ -252,3 +252,17 @@ func executeSQLFile(t testing.TB, db *pgxpool.Pool, filePath string) {
 		require.NoError(t, err)
 	}
 }
+
+// truncateAllMovieShowtimeTables truncates all tables related to movie showtimes for a clean test setup.
+func truncateAllMovieShowtimeTables(t testing.TB, db *pgxpool.Pool) {
+	t.Helper()
+	_, err := db.Exec(context.Background(), `
+		TRUNCATE showtimes RESTART IDENTITY CASCADE;
+		TRUNCATE hall_amenities RESTART IDENTITY CASCADE;
+		TRUNCATE amenities RESTART IDENTITY CASCADE;
+		TRUNCATE halls RESTART IDENTITY CASCADE;
+		TRUNCATE theaters RESTART IDENTITY CASCADE;
+		TRUNCATE movies RESTART IDENTITY CASCADE;
+	`)
+	require.NoError(t, err)
+}
