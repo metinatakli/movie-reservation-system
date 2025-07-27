@@ -369,20 +369,123 @@ func TestGetMovieShowtimes(t *testing.T) {
 		id              int
 		params          api.GetMovieShowtimesParams
 		url             string
+		existsByIdFunc  func(context.Context, int) (bool, error)
 		getTheatersFunc func(context.Context, int, time.Time, float64, float64, domain.Pagination) ([]domain.Theater, *domain.Metadata, error)
 		wantStatus      int
 		wantErrMessage  string
 		wantResponse    *api.MovieShowtimesResponse
 	}{
 		{
+			name: "invalid movie ID",
+			id:   0,
+			params: api.GetMovieShowtimesParams{
+				Date:      ptr("2024-03-20"),
+				Latitude:  ptr(39.990067),
+				Longitude: ptr(32.643482),
+			},
+			url:            "/movies/0/showtimes",
+			wantStatus:     http.StatusBadRequest,
+			wantErrMessage: "movie ID must be greater than zero",
+		},
+		{
+			name: "invalid date format",
+			id:   1,
+			params: api.GetMovieShowtimesParams{
+				Date:      ptr("invalid-date"),
+				Latitude:  ptr(39.990067),
+				Longitude: ptr(32.643482),
+			},
+			url:            "/movies/1/showtimes?date=invalid-date",
+			wantStatus:     http.StatusUnprocessableEntity,
+			wantErrMessage: validator.ErrDefaultInvalid,
+		},
+		{
+			name: "movie with given id does not exist",
+			id:   1,
+			params: api.GetMovieShowtimesParams{
+				Date:      ptr("2024-03-20"),
+				Latitude:  ptr(39.990067),
+				Longitude: ptr(32.643482),
+			},
+			url: "/movies/1/showtimes",
+			existsByIdFunc: func(ctx context.Context, id int) (bool, error) {
+				return false, nil
+			},
+			wantStatus:     http.StatusNotFound,
+			wantErrMessage: ErrNotFound,
+		},
+		{
+			name: "database error",
+			id:   1,
+			params: api.GetMovieShowtimesParams{
+				Date:      ptr("2024-03-20"),
+				Latitude:  ptr(39.990067),
+				Longitude: ptr(32.643482),
+			},
+			url: "/movies/1/showtimes",
+			existsByIdFunc: func(ctx context.Context, id int) (bool, error) {
+				return true, nil
+			},
+			getTheatersFunc: func(ctx context.Context, movieID int, date time.Time, lon, lat float64, pagination domain.Pagination) (
+				[]domain.Theater,
+				*domain.Metadata,
+				error,
+			) {
+				return nil, nil, fmt.Errorf("database error")
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
+			name: "empty result",
+			id:   1,
+			params: api.GetMovieShowtimesParams{
+				Date:      ptr("2024-03-20"),
+				Latitude:  ptr(39.990067),
+				Longitude: ptr(32.643482),
+			},
+			url: "/movies/1/showtimes",
+			existsByIdFunc: func(ctx context.Context, id int) (bool, error) {
+				return true, nil
+			},
+			getTheatersFunc: func(ctx context.Context, movieID int, date time.Time, lon, lat float64, pagination domain.Pagination) (
+				[]domain.Theater,
+				*domain.Metadata,
+				error,
+			) {
+				return []domain.Theater{}, &domain.Metadata{
+					CurrentPage:  1,
+					FirstPage:    1,
+					LastPage:     1,
+					PageSize:     10,
+					TotalRecords: 0,
+				}, nil
+			},
+			wantStatus: http.StatusOK,
+			wantResponse: &api.MovieShowtimesResponse{
+				Date:     types.Date{Time: time.Date(2024, 3, 20, 0, 0, 0, 0, time.UTC)},
+				Theaters: []api.TheaterShowtimes{},
+				Metadata: &api.Metadata{
+					CurrentPage:  1,
+					FirstPage:    1,
+					LastPage:     1,
+					PageSize:     10,
+					TotalRecords: 0,
+				},
+			},
+		},
+		{
 			name: "successful retrieval",
 			id:   1,
 			params: api.GetMovieShowtimesParams{
-				Date:      "2024-03-20",
-				Latitude:  39.990067,
-				Longitude: 32.643482,
+				Date:      ptr("2024-03-20"),
+				Latitude:  ptr(39.990067),
+				Longitude: ptr(32.643482),
 			},
 			url: "/movies/1/showtimes?date=2024-03-20&latitude=39.990067&longitude=32.643482",
+			existsByIdFunc: func(ctx context.Context, id int) (bool, error) {
+				return true, nil
+			},
 			getTheatersFunc: func(ctx context.Context, movieID int, date time.Time, lon, lat float64, pagination domain.Pagination) (
 				[]domain.Theater,
 				*domain.Metadata,
@@ -489,84 +592,6 @@ func TestGetMovieShowtimes(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "invalid movie ID",
-			id:   0,
-			params: api.GetMovieShowtimesParams{
-				Date:      "2024-03-20",
-				Latitude:  39.990067,
-				Longitude: 32.643482,
-			},
-			url:            "/movies/0/showtimes",
-			wantStatus:     http.StatusBadRequest,
-			wantErrMessage: "movie ID must be greater than zero",
-		},
-		{
-			name: "invalid date format",
-			id:   1,
-			params: api.GetMovieShowtimesParams{
-				Date:      "invalid-date",
-				Latitude:  39.990067,
-				Longitude: 32.643482,
-			},
-			url:            "/movies/1/showtimes?date=invalid-date",
-			wantStatus:     http.StatusUnprocessableEntity,
-			wantErrMessage: validator.ErrDefaultInvalid,
-		},
-		{
-			name: "database error",
-			id:   1,
-			params: api.GetMovieShowtimesParams{
-				Date:      "2024-03-20",
-				Latitude:  39.990067,
-				Longitude: 32.643482,
-			},
-			url: "/movies/1/showtimes",
-			getTheatersFunc: func(ctx context.Context, movieID int, date time.Time, lon, lat float64, pagination domain.Pagination) (
-				[]domain.Theater,
-				*domain.Metadata,
-				error,
-			) {
-				return nil, nil, fmt.Errorf("database error")
-			},
-			wantStatus:     http.StatusInternalServerError,
-			wantErrMessage: ErrInternalServer,
-		},
-		{
-			name: "empty result",
-			id:   1,
-			params: api.GetMovieShowtimesParams{
-				Date:      "2024-03-20",
-				Latitude:  39.990067,
-				Longitude: 32.643482,
-			},
-			url: "/movies/1/showtimes",
-			getTheatersFunc: func(ctx context.Context, movieID int, date time.Time, lon, lat float64, pagination domain.Pagination) (
-				[]domain.Theater,
-				*domain.Metadata,
-				error,
-			) {
-				return []domain.Theater{}, &domain.Metadata{
-					CurrentPage:  1,
-					FirstPage:    1,
-					LastPage:     1,
-					PageSize:     10,
-					TotalRecords: 0,
-				}, nil
-			},
-			wantStatus: http.StatusOK,
-			wantResponse: &api.MovieShowtimesResponse{
-				Date:     types.Date{Time: time.Date(2024, 3, 20, 0, 0, 0, 0, time.UTC)},
-				Theaters: []api.TheaterShowtimes{},
-				Metadata: &api.Metadata{
-					CurrentPage:  1,
-					FirstPage:    1,
-					LastPage:     1,
-					PageSize:     10,
-					TotalRecords: 0,
-				},
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -574,6 +599,9 @@ func TestGetMovieShowtimes(t *testing.T) {
 			app := newTestApplication(func(a *Application) {
 				a.theaterRepo = &mocks.MockTheaterRepo{
 					GetTheatersByMovieAndLocationAndDateFunc: tt.getTheatersFunc,
+				}
+				a.movieRepo = &mocks.MockMovieRepo{
+					ExistsByIdFunc: tt.existsByIdFunc,
 				}
 			})
 

@@ -19,6 +19,8 @@ func NewPostgresTheaterRepository(db *pgxpool.Pool) *PostgresTheaterRepository {
 	}
 }
 
+// GetTheatersByMovieAndLocationAndDate fetches a paginated list of theaters showing a specific movie on a given date,
+// within 20 km of a user location, including distance, theater and hall-level amenities, and showtimes, all returned as JSONB.
 func (p *PostgresTheaterRepository) GetTheatersByMovieAndLocationAndDate(
 	ctx context.Context,
 	movieID int,

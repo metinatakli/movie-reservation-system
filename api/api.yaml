@@ -538,13 +538,11 @@ paths:
           schema:
             type: integer
             minimum: 1
-          required: true
         - in: query
           name: latitude
           schema:
             type: number
             format: double
-          required: true
           x-oapi-codegen-extra-tags:
             validate: "required,latitude"
         - in: query
@@ -552,14 +550,12 @@ paths:
           schema:
             type: number
             format: double
-          required: true
           x-oapi-codegen-extra-tags:
             validate: "required,longitude"
         - in: query
           name: date
           schema:
             type: string
-          required: true
           x-oapi-codegen-extra-tags:
             validate: "required,datetime=2006-01-02"
         - in: query

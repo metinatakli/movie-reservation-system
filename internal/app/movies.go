@@ -174,10 +174,10 @@ func toMovieDetailsResponse(movie *domain.Movie) api.MovieDetailsResponse {
 func (app *Application) GetMovieShowtimes(
 	w http.ResponseWriter,
 	r *http.Request,
-	id int,
+	movieId int,
 	params api.GetMovieShowtimesParams) {
 
-	if id < 1 {
+	if movieId < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("movie ID must be greater than zero"))
 		return
 	}
@@ -185,12 +185,6 @@ func (app *Application) GetMovieShowtimes(
 	err := app.validator.Struct(params)
 	if err != nil {
 		app.failedValidationResponse(w, r, err)
-		return
-	}
-
-	date, err := time.Parse(time.DateOnly, params.Date)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
 		return
 	}
 
@@ -207,12 +201,29 @@ func (app *Application) GetMovieShowtimes(
 		pagination.PageSize = *params.PageSize
 	}
 
+	movieExists, err := app.movieRepo.ExistsById(r.Context(), movieId)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
+	if !movieExists {
+		app.notFoundResponse(w, r)
+		return
+	}
+
+	date, err := time.Parse(time.DateOnly, *params.Date)
+	if err != nil {
+		app.serverErrorResponse(w, r, err)
+		return
+	}
+
 	theaters, metadata, err := app.theaterRepo.GetTheatersByMovieAndLocationAndDate(
 		r.Context(),
-		id,
+		movieId,
 		date,
-		params.Longitude,
-		params.Latitude,
+		*params.Longitude,
+		*params.Latitude,
 		pagination,
 	)
 	if err != nil {

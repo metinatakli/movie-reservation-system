@@ -24,4 +24,5 @@ type Movie struct {
 type MovieRepository interface {
 	GetAll(ctx context.Context, pagination Pagination) ([]*Movie, *Metadata, error)
 	GetById(ctx context.Context, id int) (*Movie, error)
+	ExistsById(ctx context.Context, id int) (bool, error)
 }

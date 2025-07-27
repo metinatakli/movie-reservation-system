@@ -100,3 +100,12 @@ func (p *PostgresMovieRepository) GetById(ctx context.Context, id int) (*domain.
 
 	return movie, nil
 }
+
+func (p *PostgresMovieRepository) ExistsById(ctx context.Context, id int) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM movies WHERE id = $1)`
+
+	var exists bool
+	err := p.db.QueryRow(ctx, query, id).Scan(&exists)
+
+	return exists, err
+}
