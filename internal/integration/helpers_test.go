@@ -7,11 +7,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"math/big"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/stretchr/testify/require"
@@ -175,5 +180,75 @@ func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
 			Expires: expiry,
 			Path:    "/",
 		},
+	}
+}
+
+// insertTestMovie inserts a movie into the DB using the domain.Movie struct.
+func insertTestMovie(t testing.TB, db *pgxpool.Pool, movie *domain.Movie) int {
+	t.Helper()
+
+	var movieID int
+	err := db.QueryRow(
+		context.Background(),
+		`INSERT INTO movies (title, description, genres, language, release_date, duration, poster_url, director, cast_members, rating)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+		movie.Title,
+		movie.Description,
+		movie.Genres,
+		movie.Language,
+		movie.ReleaseDate,
+		movie.Duration,
+		movie.PosterUrl,
+		movie.Director,
+		movie.CastMembers,
+		movie.Rating,
+	).Scan(&movieID)
+
+	require.NoError(t, err)
+
+	return movieID
+}
+
+// truncateMovies truncates the movies table and resets its identity column.
+func truncateMovies(t testing.TB, db *pgxpool.Pool) {
+	t.Helper()
+
+	_, err := db.Exec(context.Background(), "TRUNCATE movies RESTART IDENTITY CASCADE")
+	require.NoError(t, err)
+}
+
+// defaultTestMovie returns a *domain.Movie with default test values.
+func defaultTestMovie() *domain.Movie {
+	releaseDate, _ := time.Parse("2006-01-02", TestMovieReleaseDate)
+	rating := pgtype.Numeric{Int: new(big.Int).SetInt64(75), Exp: -1, Valid: true}
+	return &domain.Movie{
+		Title:       TestMovieTitle,
+		Description: TestMovieDescription,
+		Genres:      TestMovieGenres,
+		Language:    TestMovieLanguage,
+		ReleaseDate: releaseDate,
+		Duration:    TestMovieDuration,
+		PosterUrl:   TestMoviePosterUrl,
+		Director:    TestMovieDirector,
+		CastMembers: TestMovieCast,
+		Rating:      rating,
+	}
+}
+
+// executeSQLFile executes a SQL file at the given path against the provided DB.
+func executeSQLFile(t testing.TB, db *pgxpool.Pool, filePath string) {
+	t.Helper()
+
+	content, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+
+	queries := strings.Split(string(content), ";")
+	for _, query := range queries {
+		q := strings.TrimSpace(query)
+		if q == "" {
+			continue
+		}
+		_, err := db.Exec(context.Background(), q)
+		require.NoError(t, err)
 	}
 }
