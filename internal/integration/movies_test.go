@@ -177,3 +177,56 @@ func (s *MovieTestSuite) TestGetMovies() {
 		scenario.Run(s.T(), s.app)
 	}
 }
+
+func (s *MovieTestSuite) TestShowMovieDetails() {
+	scenarios := []Scenario{
+		{
+			Name:           "returns 400 for invalid movie ID",
+			Method:         "GET",
+			URL:            "/movies/0",
+			ExpectedStatus: 400,
+			ExpectedResponse: `{
+				"message": "movie ID must be greater than zero"
+			}`,
+		},
+		{
+			Name:           "returns 404 when movie not found",
+			Method:         "GET",
+			URL:            "/movies/9999",
+			ExpectedStatus: 404,
+			ExpectedResponse: `{
+				"message": "The requested resource not found"
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateMovies(t, app.DB)
+			},
+		},
+		{
+			Name:           "successfully retrieves movie details",
+			Method:         "GET",
+			URL:            "/movies/1",
+			ExpectedStatus: 200,
+			ExpectedResponse: `{
+				"id": 1,
+				"name": "Movie 1",
+				"posterUrl": "https://example.com/poster1.jpg",
+				"releaseDate": "2025-01-01",
+				"description": "Description 1",
+				"runtime": 100,
+				"genres": ["Action"],
+				"language": "English",
+				"director": "Director 1",
+				"cast": ["Actor 1"],
+				"rating": 7.0
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				truncateMovies(t, app.DB)
+				executeSQLFile(t, app.DB, "testdata/movies.sql")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}

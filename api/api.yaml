@@ -1069,8 +1069,8 @@ components:
       required:
         - id
         - name
-        - poster_url
-        - release_date
+        - posterUrl
+        - releaseDate
         - description
         - runtime
         - genres
@@ -1082,10 +1082,10 @@ components:
           type: integer
         name:
           type: string
-        poster_url:
+        posterUrl:
           type: string
           format: uri
-        release_date:
+        releaseDate:
           type: string
           format: date
           description: The official release date of the movie
