@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,13 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"math/big"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -183,58 +182,6 @@ func (app *TestApp) authenticatedUserCookies(t *testing.T) []http.Cookie {
 	}
 }
 
-// insertTestMovie inserts a movie into the DB using the domain.Movie struct.
-func insertTestMovie(t testing.TB, db *pgxpool.Pool, movie *domain.Movie) int {
-	t.Helper()
-
-	var movieID int
-	err := db.QueryRow(
-		context.Background(),
-		`INSERT INTO movies (title, description, genres, language, release_date, duration, poster_url, director, cast_members, rating)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		movie.Title,
-		movie.Description,
-		movie.Genres,
-		movie.Language,
-		movie.ReleaseDate,
-		movie.Duration,
-		movie.PosterUrl,
-		movie.Director,
-		movie.CastMembers,
-		movie.Rating,
-	).Scan(&movieID)
-
-	require.NoError(t, err)
-
-	return movieID
-}
-
-// truncateMovies truncates the movies table and resets its identity column.
-func truncateMovies(t testing.TB, db *pgxpool.Pool) {
-	t.Helper()
-
-	_, err := db.Exec(context.Background(), "TRUNCATE movies RESTART IDENTITY CASCADE")
-	require.NoError(t, err)
-}
-
-// defaultTestMovie returns a *domain.Movie with default test values.
-func defaultTestMovie() *domain.Movie {
-	releaseDate, _ := time.Parse("2006-01-02", TestMovieReleaseDate)
-	rating := pgtype.Numeric{Int: new(big.Int).SetInt64(75), Exp: -1, Valid: true}
-	return &domain.Movie{
-		Title:       TestMovieTitle,
-		Description: TestMovieDescription,
-		Genres:      TestMovieGenres,
-		Language:    TestMovieLanguage,
-		ReleaseDate: releaseDate,
-		Duration:    TestMovieDuration,
-		PosterUrl:   TestMoviePosterUrl,
-		Director:    TestMovieDirector,
-		CastMembers: TestMovieCast,
-		Rating:      rating,
-	}
-}
-
 // executeSQLFile executes a SQL file at the given path against the provided DB.
 func executeSQLFile(t testing.TB, db *pgxpool.Pool, filePath string) {
 	t.Helper()
@@ -253,16 +200,21 @@ func executeSQLFile(t testing.TB, db *pgxpool.Pool, filePath string) {
 	}
 }
 
-// truncateAllMovieShowtimeTables truncates all tables related to movie showtimes for a clean test setup.
-func truncateAllMovieShowtimeTables(t testing.TB, db *pgxpool.Pool) {
+// flushAllCache flushes all data from the Redis cache.
+func flushAllCache(t testing.TB, redis redis.UniversalClient) {
 	t.Helper()
-	_, err := db.Exec(context.Background(), `
-		TRUNCATE showtimes RESTART IDENTITY CASCADE;
-		TRUNCATE hall_amenities RESTART IDENTITY CASCADE;
-		TRUNCATE amenities RESTART IDENTITY CASCADE;
-		TRUNCATE halls RESTART IDENTITY CASCADE;
-		TRUNCATE theaters RESTART IDENTITY CASCADE;
-		TRUNCATE movies RESTART IDENTITY CASCADE;
-	`)
+	err := redis.FlushDB(context.Background()).Err()
+	require.NoError(t, err)
+}
+
+// lockSeatInCache locks a seat in the Redis cache for a given showtime ID and seat ID.
+func lockSeatInCache(t testing.TB, redis redis.UniversalClient, showtimeId, seatId int) {
+	t.Helper()
+
+	key := fmt.Sprintf("seat_lock:%d:%d", showtimeId, seatId)
+	err := redis.Set(context.Background(), key, "locked", 15*time.Minute).Err()
+	require.NoError(t, err)
+
+	err = redis.SAdd(context.Background(), fmt.Sprintf("seat_locks:%d", showtimeId), seatId).Err()
 	require.NoError(t, err)
 }

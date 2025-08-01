@@ -3,7 +3,6 @@ package integration_test
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -38,77 +37,7 @@ func (s *MovieTestSuite) TestGetMovies() {
 				}
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
-			},
-		},
-		{
-			Name:           "returns single movie",
-			Method:         "GET",
-			URL:            "/movies",
-			ExpectedStatus: 200,
-			ExpectedResponse: fmt.Sprintf(`{
-				"movies": [
-					{
-						"id": 1,
-						"name": "%s",
-						"description": "%s",
-						"posterUrl": "%s",
-						"releaseDate": "%s",
-						"status": "NOW_SHOWING"
-					}
-				],
-				"metadata": {
-					"currentPage": 1,
-					"firstPage": 1,
-					"lastPage": 1,
-					"pageSize": 10,
-					"totalRecords": 1
-				}
-			}`,
-				TestMovieTitle,
-				TestMovieDescription,
-				TestMoviePosterUrl,
-				TestMovieReleaseDate,
-			),
-			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
-				insertTestMovie(t, app.DB, defaultTestMovie())
-			},
-		},
-		{
-			Name:           "returns multiple movies",
-			Method:         "GET",
-			URL:            "/movies",
-			ExpectedStatus: 200,
-			ExpectedResponse: fmt.Sprintf(`{
-				"movies": [
-					{"id": 1, "name": "%s", "description": "%s", "posterUrl": "%s", "releaseDate": "%s", "status": "NOW_SHOWING"},
-					{"id": 2, "name": "Another Movie", "description": "Another description.", "posterUrl": "https://example.com/another.jpg", "releaseDate": "%s", "status": "COMING_SOON"}
-				],
-				"metadata": {
-					"currentPage": 1,
-					"firstPage": 1,
-					"lastPage": 1,
-					"pageSize": 10,
-					"totalRecords": 2
-				}
-			}`,
-				TestMovieTitle,
-				TestMovieDescription,
-				TestMoviePosterUrl,
-				TestMovieReleaseDate,
-				time.Now().AddDate(50, 0, 0).Format("2006-01-02"),
-			),
-			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
-				insertTestMovie(t, app.DB, defaultTestMovie())
-
-				m := defaultTestMovie()
-				m.Title = "Another Movie"
-				m.Description = "Another description."
-				m.PosterUrl = "https://example.com/another.jpg"
-				m.ReleaseDate, _ = time.Parse("2006-01-02", time.Now().AddDate(50, 0, 0).Format("2006-01-02"))
-				insertTestMovie(t, app.DB, m)
+				executeSQLFile(t, app.DB, "testdata/movies_down.sql")
 			},
 		},
 		{
@@ -143,8 +72,8 @@ func (s *MovieTestSuite) TestGetMovies() {
 				}
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
-				executeSQLFile(t, app.DB, "testdata/movies.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_down.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_up.sql")
 			},
 		},
 		{
@@ -167,8 +96,8 @@ func (s *MovieTestSuite) TestGetMovies() {
 				}
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
-				executeSQLFile(t, app.DB, "testdata/movies.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_down.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_up.sql")
 			},
 		},
 	}
@@ -198,7 +127,7 @@ func (s *MovieTestSuite) TestShowMovieDetails() {
 				"message": "The requested resource not found"
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
+				executeSQLFile(t, app.DB, "testdata/movies_down.sql")
 			},
 		},
 		{
@@ -220,8 +149,8 @@ func (s *MovieTestSuite) TestShowMovieDetails() {
 				"rating": 7.0
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateMovies(t, app.DB)
-				executeSQLFile(t, app.DB, "testdata/movies.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_down.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_up.sql")
 			},
 		},
 	}
@@ -262,7 +191,7 @@ func (s *MovieTestSuite) TestGetMovieShowtimes() {
 			ExpectedStatus:   404,
 			ExpectedResponse: `{"message": "The requested resource not found"}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateAllMovieShowtimeTables(t, app.DB)
+				executeSQLFile(t, app.DB, "testdata/showtimes_down.sql")
 			},
 		},
 		{
@@ -349,13 +278,11 @@ func (s *MovieTestSuite) TestGetMovieShowtimes() {
 				}
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
-				truncateAllMovieShowtimeTables(t, app.DB)
-				executeSQLFile(t, app.DB, "testdata/movies.sql")
-				executeSQLFile(t, app.DB, "testdata/theaters.sql")
-				executeSQLFile(t, app.DB, "testdata/halls.sql")
-				executeSQLFile(t, app.DB, "testdata/amenities.sql")
-				executeSQLFile(t, app.DB, "testdata/hall_amenities.sql")
-				executeSQLFile(t, app.DB, "testdata/showtimes.sql")
+				executeSQLFile(t, app.DB, "testdata/showtimes_down.sql")
+				executeSQLFile(t, app.DB, "testdata/movies_down.sql")
+
+				executeSQLFile(t, app.DB, "testdata/movies_up.sql")
+				executeSQLFile(t, app.DB, "testdata/showtimes_up.sql")
 			},
 		},
 	}
