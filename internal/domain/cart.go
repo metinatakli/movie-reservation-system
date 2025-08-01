@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -31,7 +30,7 @@ type CartSeat struct {
 func NewCart(showtimeID int, showtimeSeats *ShowtimeSeats) Cart {
 	id := uuid.New().String()
 	seats := toCartSeats(showtimeSeats.Seats)
-	basePrice := decimal.NewFromFloat(toFloat64(showtimeSeats.Price))
+	basePrice := decimal.NewFromFloat(showtimeSeats.Price)
 	totalPrice := calculateTotalPrice(basePrice, seats)
 
 	return Cart{
@@ -69,24 +68,11 @@ func toCartSeats(seats []Seat) []CartSeat {
 			SeatType: seat.Type,
 		}
 
-		priceFloat := toFloat64(seat.ExtraPrice)
+		priceFloat := seat.ExtraPrice
 		cartSeat.ExtraPrice = decimal.NewFromFloat(priceFloat)
 
 		cartSeats[i] = cartSeat
 	}
 
 	return cartSeats
-}
-
-func toFloat64(numeric pgtype.Numeric) float64 {
-	if !numeric.Valid {
-		return 0.0
-	}
-
-	float64Value, floatErr := numeric.Float64Value()
-	if floatErr != nil {
-		return 0.0
-	}
-
-	return float64Value.Float64
 }

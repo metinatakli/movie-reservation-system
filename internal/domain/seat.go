@@ -3,8 +3,6 @@ package domain
 import (
 	"context"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type ShowtimeSeats struct {
@@ -15,7 +13,7 @@ type ShowtimeSeats struct {
 	Date        time.Time
 	HallID      int
 	Seats       []Seat
-	Price       pgtype.Numeric
+	Price       float64
 }
 
 type Seat struct {
@@ -23,7 +21,7 @@ type Seat struct {
 	Row        int
 	Col        int
 	Type       string
-	ExtraPrice pgtype.Numeric
+	ExtraPrice float64
 	Available  bool
 }
 

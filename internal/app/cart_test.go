@@ -11,7 +11,6 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/metinatakli/movie-reservation-system/internal/mocks"
@@ -56,9 +55,9 @@ var (
 	showtimeDate = time.Date(2025, time.April, 6, 14, 0, 0, 0, time.UTC)
 	testSeatIDs  = []int{1, 2, 3}
 	testSeats    = []domain.Seat{
-		{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(0).BigInt(), Valid: true}},
-		{ID: 2, Row: 1, Col: 2, Type: "VIP", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(15).BigInt(), Valid: true}},
-		{ID: 3, Row: 1, Col: 3, Type: "Recliner", ExtraPrice: pgtype.Numeric{Int: decimal.NewFromFloat(10).BigInt(), Valid: true}},
+		{ID: 1, Row: 1, Col: 1, Type: "Standard", ExtraPrice: 0},
+		{ID: 2, Row: 1, Col: 2, Type: "VIP", ExtraPrice: 15},
+		{ID: 3, Row: 1, Col: 3, Type: "Recliner", ExtraPrice: 10},
 	}
 )
 
@@ -310,7 +309,7 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				}, nil)
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
 					Seats:       testSeats,
-					Price:       pgtype.Numeric{Int: decimal.NewFromFloat(testBasePrice).BigInt(), Valid: true},
+					Price:       testBasePrice,
 					MovieName:   movieName,
 					TheaterName: theaterName,
 					HallName:    hallName,

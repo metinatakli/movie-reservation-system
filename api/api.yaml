@@ -1307,8 +1307,11 @@ components:
           $ref: '#/components/schemas/SeatType'
           description: The type of seat (e.g., Standard, VIP, Recliner, Accessible).
         extraPrice:
-          type: number
-          description: The additional price for the seat, if any.
+          type: string
+          x-go-type: decimal.Decimal
+          x-go-type-import:
+            path: github.com/shopspring/decimal
+            name: Decimal
         available:
           type: boolean
           description: Indicates whether the seat is available for reservation.

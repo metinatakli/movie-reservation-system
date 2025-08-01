@@ -8,7 +8,39 @@ import (
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 )
+
+// Redis Lua script to clean up expired seat locks and return currently valid locked seat IDs.
+var filterValidLockSeats = redis.NewScript(`
+	local setKey = KEYS[1]
+	local showtimeId = ARGV[1]
+	local cursor = "0"
+	local batchSize = 100
+	local expiredSeats = {}
+	local validSeats = {}
+
+	repeat
+		local result = redis.call("SSCAN", setKey, cursor, "COUNT", batchSize)
+		cursor = result[1]
+		local seatIds = result[2]
+
+		for _, seatId in ipairs(seatIds) do
+			local lockKey = "seat_lock:" .. showtimeId .. ":" .. seatId
+			if redis.call("EXISTS", lockKey) == 0 then
+				table.insert(expiredSeats, seatId)
+			else
+				table.insert(validSeats, seatId)
+			end
+		end
+	until cursor == "0"
+
+	if #expiredSeats > 0 then
+		redis.call("SREM", setKey, unpack(expiredSeats))
+	end
+
+	return validSeats
+`)
 
 func (app *Application) GetSeatMapByShowtime(
 	w http.ResponseWriter,
@@ -46,45 +78,10 @@ func (app *Application) GetSeatMapByShowtime(
 }
 
 func (app *Application) updateSeatAvailability(ctx context.Context, showtimeID int, showtimeSeats *domain.ShowtimeSeats) error {
-	filterValidLockSeats := redis.NewScript(`
-		local setKey = KEYS[1]
-		local showtimeId = ARGV[1]
-		local cursor = "0"
-		local batchSize = 100
-		local expiredSeats = {}
-		local validSeats = {}
-
-		repeat
-			local result = redis.call("SSCAN", setKey, cursor, "COUNT", batchSize)
-			cursor = result[1]
-			local seatIds = result[2]
-
-			for _, seatId in ipairs(seatIds) do
-				local lockKey = "seat_lock:" .. showtimeId .. ":" .. seatId
-				if redis.call("EXISTS", lockKey) == 0 then
-					table.insert(expiredSeats, seatId)
-				else
-					table.insert(validSeats, seatId)
-				end
-			end
-		until cursor == "0"
-
-		if #expiredSeats > 0 then
-			redis.call("SREM", setKey, unpack(expiredSeats))
-		end
-
-		return validSeats
-	`)
-
 	cmd := filterValidLockSeats.Run(ctx, app.redis, []string{seatSetKey(showtimeID)}, showtimeID)
-	_, err := cmd.Result()
-	if err != nil {
-		return err
-	}
-
 	lockedSeatIds, err := cmd.Int64Slice()
 	if err != nil {
-		return fmt.Errorf("unexpected Redis response type")
+		return fmt.Errorf("updating seat availability for showtime %d: %w", showtimeID, err)
 	}
 
 	reservedSeats, err := app.reservationRepo.GetSeatsByShowtimeId(ctx, showtimeID)
@@ -134,15 +131,14 @@ func toSeatRows(seats []domain.Seat) []api.SeatRow {
 			currentRow = api.SeatRow{Row: v.Row}
 		}
 
-		apiSeat := api.Seat{
-			Id:        v.ID,
-			Row:       v.Row,
-			Column:    v.Col,
-			Type:      api.SeatType(v.Type),
-			Available: v.Available, // TODO: Should add booked seats also after implementing payment
-		}
-
-		currentRow.Seats = append(currentRow.Seats, apiSeat)
+		currentRow.Seats = append(currentRow.Seats, api.Seat{
+			Id:         v.ID,
+			Row:        v.Row,
+			Column:     v.Col,
+			ExtraPrice: decimal.NewFromFloat(v.ExtraPrice),
+			Type:       api.SeatType(v.Type),
+			Available:  v.Available,
+		})
 	}
 
 	seatRows = append(seatRows, currentRow)
