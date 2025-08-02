@@ -235,16 +235,11 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				s.seatRepo.On("GetSeatsByShowtimeAndSeatIds", mock.Anything, 1, testSeatIDs).Return(&domain.ShowtimeSeats{
 					Seats: testSeats,
 				}, nil)
-				s.redisClient.On("TxPipeline").Return(s.redisPipeline)
-				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), false))
-				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
-					redis.NewBoolResult(false, nil),
-					redis.NewBoolResult(true, nil),
-					redis.NewBoolResult(true, nil),
-				}, nil)
+				s.redisClient.On("EvalSha", mock.Anything, mock.Anything, []string{seatLockKey(1, 1), seatLockKey(1, 2), seatLockKey(1, 3)}, mock.Anything, mock.Anything).
+					Return(redis.NewCmdResult(nil, mocks.MockRedisError{Msg: "seat already locked"})).Once()
 			},
 			wantStatus:     http.StatusConflict,
-			wantErrMessage: ErrEditConflict,
+			wantErrMessage: "some of the selected seats are already reserved",
 		},
 		{
 			name:       "should handle Redis pipeline execution failures during cart creation",
@@ -266,13 +261,8 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				}, nil)
 
 				// First pipeline (tryLockSeats) should succeed
-				s.redisClient.On("TxPipeline").Return(s.redisPipeline).Once()
-				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), true))
-				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
-					redis.NewBoolResult(true, nil),
-					redis.NewBoolResult(true, nil),
-					redis.NewBoolResult(true, nil),
-				}, nil).Once()
+				s.redisClient.On("EvalSha", mock.Anything, mock.Anything, []string{seatLockKey(1, 1), seatLockKey(1, 2), seatLockKey(1, 3)}, mock.Anything, mock.Anything).
+					Return(redis.NewCmdResult(nil, nil)).Once()
 
 				// Second pipeline (createCart) should fail
 				s.redisClient.On("TxPipeline").Return(s.redisPipeline).Once()
@@ -281,13 +271,13 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				s.redisPipeline.On("Exec", mock.Anything).Return(nil, fmt.Errorf("redis pipeline execution failed")).Once()
 
 				// Verify rollback behavior - ensure deletion methods are called at least once for each seat ID
-				for _, seatID := range testSeatIDs {
-					s.redisClient.On("Del", mock.Anything, []string{seatLockKey(1, seatID)}).Return(redis.NewIntCmd(context.Background(), 1)).Once()
-				}
-
-				for _, seatID := range testSeatIDs {
-					s.redisClient.On("SRem", mock.Anything, seatSetKey(1), []interface{}{seatID}).Return(redis.NewIntCmd(context.Background(), 1)).Once()
-				}
+				s.redisClient.On("TxPipeline").Return(s.redisPipeline).Once()
+				s.redisPipeline.On("Del", mock.Anything, []string{"seat_lock:1:1", "seat_lock:1:2", "seat_lock:1:3"}).Return(redis.NewIntCmd(context.Background(), 1))
+				s.redisPipeline.On("SRem", mock.Anything, "seat_locks:1", mock.Anything).Return(redis.NewIntCmd(context.Background(), 1))
+				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
+					redis.NewIntCmd(context.Background(), 1),
+					redis.NewIntCmd(context.Background(), 1),
+				}, nil)
 			},
 			wantStatus:     http.StatusInternalServerError,
 			wantErrMessage: ErrInternalServer,
@@ -315,10 +305,14 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 					HallName:    hallName,
 					Date:        showtimeDate,
 				}, nil)
+
+				s.redisClient.On("EvalSha", mock.Anything, mock.Anything, []string{seatLockKey(1, 1), seatLockKey(1, 2), seatLockKey(1, 3)}, mock.Anything, mock.Anything).
+					Return(redis.NewCmdResult(nil, nil)).Once()
+
 				s.redisClient.On("TxPipeline").Return(s.redisPipeline)
-				s.redisPipeline.On("SetNX", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewBoolCmd(context.Background(), true))
+				s.redisPipeline.On("SAdd", mock.Anything, "seat_locks:1", []interface{}{1, 2, 3}).Return(redis.NewIntCmd(context.Background(), 1))
 				s.redisPipeline.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewStatusCmd(context.Background(), "OK"))
-				s.redisPipeline.On("SAdd", mock.Anything, mock.Anything, mock.Anything).Return(redis.NewIntCmd(context.Background(), 1))
+				s.redisPipeline.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redis.NewStatusCmd(context.Background(), "OK"))
 				s.redisPipeline.On("Exec", mock.Anything).Return([]redis.Cmder{
 					redis.NewBoolResult(true, nil),
 					redis.NewBoolResult(true, nil),

@@ -91,3 +91,15 @@ func (m *MockTxPipeline) Expire(ctx context.Context, key string, expiration time
 	args := m.Called(ctx, key, expiration)
 	return args.Get(0).(*redis.BoolCmd)
 }
+
+type MockRedisError struct {
+	Msg string
+}
+
+func (m MockRedisError) Error() string {
+	return m.Msg
+}
+
+func (m MockRedisError) RedisError() {
+	// This method is used to satisfy the redis.Error interface.
+}

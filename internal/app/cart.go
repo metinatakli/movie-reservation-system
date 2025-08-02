@@ -18,6 +18,23 @@ const (
 	cartTTL     = 10 * time.Minute
 )
 
+var lockSeatsScript = redis.NewScript(`
+    -- KEYS = seat lock keys (e.g., seat_lock:123:1, seat_lock:123:2 etc.)
+    -- ARGV = [sessionID, ttl]
+
+    for i=1, #KEYS do
+        if redis.call("EXISTS", KEYS[i]) == 1 then
+            return {err = "seat already locked"} -- Return an error indicator
+        end
+    end
+
+    for i=1, #KEYS do
+        redis.call("SET", KEYS[i], ARGV[1], "EX", ARGV[2])
+    end
+
+    return "OK"
+`)
+
 func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
 	if showtimeID < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
@@ -50,6 +67,7 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// TODO: Reserved seats can be moved to Redis as well until showtime start time is passed.
 	reservedSeats, err := app.reservationRepo.GetSeatsByShowtimeId(r.Context(), showtimeID)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
@@ -85,7 +103,7 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrSeatAlreadyReserved):
-			app.editConflictResponse(w, r)
+			app.editConflictResponseWithErr(w, r, fmt.Errorf("some of the selected seats are already reserved"))
 		default:
 			app.serverErrorResponse(w, r, fmt.Errorf("seats couldn't be acquired: %w", err))
 		}
@@ -143,40 +161,18 @@ func toApiCartSeats(cartSeats []domain.CartSeat) []api.CartSeat {
 }
 
 func (app *Application) tryLockSeats(ctx context.Context, seatIDs []int, showtimeID int, sessionID string) error {
-	lockPipe := app.redis.TxPipeline()
-
-	for _, seatID := range seatIDs {
-		lockPipe.SetNX(ctx, seatLockKey(showtimeID, seatID), sessionID, seatLockTTL)
-	}
-
-	lockCmds, err := lockPipe.Exec(ctx)
-	if err != nil {
-		app.logger.Debug("Pipeline for acquiring seat locks failed")
-		return err
-	}
-
+	keys := make([]string, len(seatIDs))
 	for i, seatID := range seatIDs {
-		lockKey := seatLockKey(showtimeID, seatID)
-		acquired, err := lockCmds[i].(*redis.BoolCmd).Result()
+		keys[i] = seatLockKey(showtimeID, seatID)
+	}
 
-		if err != nil || !acquired {
-			app.logger.Debug(fmt.Sprintf("Seat lock %s could not be acquired", lockKey))
-
-			for j := 0; j < i; j++ {
-				prevLockKey := seatLockKey(showtimeID, seatIDs[j])
-
-				_, delErr := app.redis.Del(ctx, prevLockKey).Result()
-				if delErr != nil {
-					app.logger.Debug(fmt.Sprintf("Failed to delete seat lock %s: %v", prevLockKey, delErr))
-				}
-			}
-
-			if err != nil {
-				return err
-			}
-
+	err := lockSeatsScript.Run(ctx, app.redis, keys, sessionID, int(seatLockTTL.Seconds())).Err()
+	if err != nil {
+		if redis.HasErrorPrefix(err, "seat already locked") {
 			return domain.ErrSeatAlreadyReserved
 		}
+
+		return err
 	}
 
 	return nil
@@ -197,11 +193,12 @@ func (app *Application) createCart(
 	}
 
 	cartPipe := app.redis.TxPipeline()
-	seatSetKey := seatSetKey(showtimeID)
 
-	for _, seatID := range seatIDs {
-		cartPipe.SAdd(ctx, seatSetKey, seatID)
+	seatIdInterfaces := make([]interface{}, len(seatIDs))
+	for i, seatID := range seatIDs {
+		seatIdInterfaces[i] = seatID
 	}
+	cartPipe.SAdd(ctx, seatSetKey(showtimeID), seatIdInterfaces...)
 
 	cartPipe.Set(ctx, cartSessionKey(sessionID), cart.Id, cartTTL)
 	cartPipe.Set(ctx, cart.Id, cartBytes, cartTTL)
@@ -216,18 +213,22 @@ func (app *Application) createCart(
 }
 
 func (app *Application) rollbackSeatLocks(ctx context.Context, showtimeID int, seatIDs []int) {
-	seatSetKey := seatSetKey(showtimeID)
+	lockKeys := make([]string, len(seatIDs))
+	seatIDInterfaces := make([]interface{}, len(seatIDs))
 
-	for _, seatID := range seatIDs {
-		lockKey := seatLockKey(showtimeID, seatID)
+	for i, seatID := range seatIDs {
+		lockKeys[i] = seatLockKey(showtimeID, seatID)
+		seatIDInterfaces[i] = seatID
+	}
 
-		if _, err := app.redis.Del(ctx, lockKey).Result(); err != nil {
-			app.logger.Debug(fmt.Sprintf("Failed to delete seat lock %s: %v", lockKey, err))
-		}
+	pipe := app.redis.TxPipeline()
+	pipe.Del(ctx, lockKeys...)
+	pipe.SRem(ctx, seatSetKey(showtimeID), seatIDInterfaces...)
 
-		if _, err := app.redis.SRem(ctx, seatSetKey, seatID).Result(); err != nil {
-			app.logger.Debug(fmt.Sprintf("Failed to remove seat %d from set %s: %v", seatID, seatSetKey, err))
-		}
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		app.logger.Error("failed to rollback seat locks", "error", err)
+		return
 	}
 }
 
