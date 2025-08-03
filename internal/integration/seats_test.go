@@ -131,7 +131,7 @@ func (s *SeatMapTestSuite) TestGetSeatMapByShowtime() {
 			}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				setupBaseSeatMapState(t, app)
-				lockSeatInCache(t, app.RedisClient, 1, 3)
+				lockSeatInCache(t, app.RedisClient, 1, 3, "session-id-123")
 			},
 		},
 		{
@@ -164,7 +164,7 @@ func (s *SeatMapTestSuite) TestGetSeatMapByShowtime() {
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				setupBaseSeatMapState(t, app)
 				executeSQLFile(t, app.DB, "testdata/seat_reservations_up.sql")
-				lockSeatInCache(t, app.RedisClient, 1, 3)
+				lockSeatInCache(t, app.RedisClient, 1, 3, "session-id-123")
 			},
 		},
 	}

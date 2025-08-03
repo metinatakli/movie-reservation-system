@@ -58,7 +58,7 @@ func compareResponse(t *testing.T, body io.Reader, expectedResponse string) {
 
 	// ignore indetermistic fields while comparing
 	opts := cmpopts.IgnoreMapEntries(func(k string, _ any) bool {
-		return k == "timestamp" || k == "requestId" || k == "createdAt"
+		return k == "timestamp" || k == "requestId" || k == "createdAt" || k == "cartId"
 	})
 
 	if diff := cmp.Diff(expected, actual, opts); diff != "" {
@@ -208,13 +208,51 @@ func flushAllCache(t testing.TB, redis redis.UniversalClient) {
 }
 
 // lockSeatInCache locks a seat in the Redis cache for a given showtime ID and seat ID.
-func lockSeatInCache(t testing.TB, redis redis.UniversalClient, showtimeId, seatId int) {
+func lockSeatInCache(t testing.TB, redis redis.UniversalClient, showtimeId, seatId int, sessionId string) {
 	t.Helper()
 
 	key := fmt.Sprintf("seat_lock:%d:%d", showtimeId, seatId)
-	err := redis.Set(context.Background(), key, "locked", 15*time.Minute).Err()
+	err := redis.Set(context.Background(), key, sessionId, 15*time.Minute).Err()
 	require.NoError(t, err)
 
 	err = redis.SAdd(context.Background(), fmt.Sprintf("seat_locks:%d", showtimeId), seatId).Err()
 	require.NoError(t, err)
+}
+
+// truncateCartRelatedCache removes only keys related to cart and seat locking,
+// leaving session data intact.
+func truncateCartRelatedCache(t testing.TB, redis redis.UniversalClient) {
+	t.Helper()
+
+	ctx := context.Background()
+	var cursor uint64
+	var keysToDelete []string
+
+	patterns := []string{
+		"seat_lock:*",
+		"seat_locks:*",
+		"cart:*",
+	}
+
+	for _, pattern := range patterns {
+		cursor = 0
+		for {
+			keys, cursor, err := redis.Scan(ctx, cursor, pattern, 100).Result()
+			require.NoError(t, err)
+
+			if len(keys) > 0 {
+				keysToDelete = append(keysToDelete, keys...)
+			}
+
+			// Scan is complete
+			if cursor == 0 {
+				break
+			}
+		}
+	}
+
+	if len(keysToDelete) > 0 {
+		_, err := redis.Del(ctx, keysToDelete...).Result()
+		require.NoError(t, err)
+	}
 }
