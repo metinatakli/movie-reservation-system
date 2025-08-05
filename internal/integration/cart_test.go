@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metinatakli/movie-reservation-system/internal/domain"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -146,6 +148,93 @@ func (s *CartTestSuite) TestCreateCartHandler() {
 				if err != nil || session2 != cookies[0].Value {
 					t.Errorf("expected seat 4 to be locked by '%s', got '%s', err: %v", cookies[0].Value, session2, err)
 				}
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (s *CartTestSuite) TestDeleteCartHandler() {
+	cookies := s.app.authenticatedUserCookies(s.T())
+
+	scenarios := []Scenario{
+		{
+			Name:             "returns 400 for invalid showtime ID",
+			Method:           "DELETE",
+			URL:              "/showtimes/0/cart",
+			ExpectedStatus:   http.StatusBadRequest,
+			ExpectedResponse: `{"message": "showtime ID must be greater than zero"}`,
+		},
+		{
+			Name:             "returns 404 if no cart exists for the session",
+			Method:           "DELETE",
+			URL:              "/showtimes/1/cart",
+			Cookies:          cookies,
+			ExpectedStatus:   http.StatusNotFound,
+			ExpectedResponse: `{"message": "The requested resource not found"}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				setupBaseCreateCartHandlerState(t, app)
+			},
+		},
+		{
+			Name:             "returns 404 if session points to an expired/non-existent cart object",
+			Method:           "DELETE",
+			URL:              "/showtimes/1/cart",
+			Cookies:          cookies,
+			ExpectedStatus:   http.StatusNotFound,
+			ExpectedResponse: `{"message": "The requested resource not found"}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				setupBaseCreateCartHandlerState(t, app)
+
+				cartSessionKey := fmt.Sprintf("cart:%s", cookies[0].Value)
+				err := app.RedisClient.Set(context.Background(), cartSessionKey, "dangling-cart-id", 10*time.Minute).Err()
+				require.NoError(t, err)
+			},
+		},
+		{
+			Name:             "returns 404 if the showtime ID in the URL does not match the cart's showtime ID",
+			Method:           "DELETE",
+			URL:              "/showtimes/999/cart",
+			Cookies:          cookies,
+			ExpectedStatus:   http.StatusNotFound,
+			ExpectedResponse: `{"message": "The requested resource not found"}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				setupBaseCreateCartHandlerState(t, app)
+				createTestCartInCache(s.T(), app, cookies[0].Value, 1, []domain.CartSeat{{Id: 1}})
+			},
+		},
+		{
+			Name:           "returns 204 when successfully deletes a cart and all associated keys",
+			Method:         "DELETE",
+			URL:            "/showtimes/1/cart",
+			Cookies:        cookies,
+			ExpectedStatus: http.StatusNoContent,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				setupBaseCreateCartHandlerState(t, app)
+				createTestCartInCache(t, app, cookies[0].Value, 1, []domain.CartSeat{{Id: 1}, {Id: 4}})
+			},
+			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
+				ctx := context.Background()
+
+				// Verify all keys are gone.
+				keysToCheck := []string{
+					fmt.Sprintf("cart:%s", cookies[0].Value),
+					"seat_lock:1:1",
+					"seat_lock:1:4",
+				}
+
+				count, err := app.RedisClient.Exists(ctx, keysToCheck...).Result()
+				require.NoError(t, err)
+				require.Equal(t, int64(0), count, "expected cart and lock keys to be deleted")
+
+				// Verify the seat set is empty
+				seatLockSetKey := "seat_locks:1"
+				members, err := app.RedisClient.SMembers(ctx, seatLockSetKey).Result()
+				require.NoError(t, err)
+				require.Empty(t, members, "expected seat set to be empty")
 			},
 		},
 	}

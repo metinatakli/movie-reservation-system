@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
@@ -255,4 +256,37 @@ func truncateCartRelatedCache(t testing.TB, redis redis.UniversalClient) {
 		_, err := redis.Del(ctx, keysToDelete...).Result()
 		require.NoError(t, err)
 	}
+}
+
+// createTestCartInCache sets up a complete cart object and its associated session/lock
+// keys in Redis, simulating the state after a successful cart creation.
+func createTestCartInCache(t testing.TB, app *TestApp, sessionToken string, showtimeID int, seats []domain.CartSeat) string {
+	t.Helper()
+	ctx := context.Background()
+
+	cart := domain.Cart{
+		Id:         uuid.New().String(),
+		ShowtimeID: showtimeID,
+		Seats:      seats,
+	}
+
+	cartBytes, err := json.Marshal(cart)
+	require.NoError(t, err)
+
+	pipe := app.RedisClient.TxPipeline()
+
+	pipe.Set(ctx, cart.Id, cartBytes, 10*time.Minute)
+	pipe.Set(ctx, fmt.Sprintf("cart:%s", sessionToken), cart.Id, 10*time.Minute)
+
+	seatLockSetKey := fmt.Sprintf("seat_locks:%d", showtimeID)
+	for _, seat := range seats {
+		lockKey := fmt.Sprintf("seat_lock:%d:%d", showtimeID, seat.Id)
+		pipe.Set(ctx, lockKey, sessionToken, 10*time.Minute)
+		pipe.SAdd(ctx, seatLockSetKey, seat.Id)
+	}
+
+	_, err = pipe.Exec(ctx)
+	require.NoError(t, err)
+
+	return cart.Id
 }
