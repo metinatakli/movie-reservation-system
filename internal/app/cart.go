@@ -265,6 +265,12 @@ func (app *Application) DeleteCartHandler(w http.ResponseWriter, r *http.Request
 
 	cartBytes, err := app.redis.Get(r.Context(), cartId).Bytes()
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			// The session points to a cart that no longer exists, delete the session key
+			app.redis.Del(r.Context(), cartSessionKey(sessionID))
+			app.notFoundResponse(w, r)
+			return
+		}
 		app.serverErrorResponse(w, r, err)
 		return
 	}
