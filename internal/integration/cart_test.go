@@ -203,7 +203,7 @@ func (s *CartTestSuite) TestDeleteCartHandler() {
 			ExpectedResponse: `{"message": "The requested resource not found"}`,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				setupBaseCreateCartHandlerState(t, app)
-				createTestCartInCache(s.T(), app, cookies[0].Value, 1, []domain.CartSeat{{Id: 1}})
+				createTestCartInCache(s.T(), app, cookies[0].Value, 1, []domain.CartSeat{{Id: 1}}, 10*time.Minute, 10*time.Minute)
 			},
 		},
 		{
@@ -214,7 +214,7 @@ func (s *CartTestSuite) TestDeleteCartHandler() {
 			ExpectedStatus: http.StatusNoContent,
 			BeforeTestFunc: func(t testing.TB, app *TestApp) {
 				setupBaseCreateCartHandlerState(t, app)
-				createTestCartInCache(t, app, cookies[0].Value, 1, []domain.CartSeat{{Id: 1}, {Id: 4}})
+				createTestCartInCache(t, app, cookies[0].Value, 1, []domain.CartSeat{{Id: 1}, {Id: 4}}, 10*time.Minute, 10*time.Minute)
 			},
 			AfterTestFunc: func(t testing.TB, app *TestApp, res *http.Response) {
 				ctx := context.Background()

@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -260,7 +261,15 @@ func truncateCartRelatedCache(t testing.TB, redis redis.UniversalClient) {
 
 // createTestCartInCache sets up a complete cart object and its associated session/lock
 // keys in Redis, simulating the state after a successful cart creation.
-func createTestCartInCache(t testing.TB, app *TestApp, sessionToken string, showtimeID int, seats []domain.CartSeat) string {
+func createTestCartInCache(
+	t testing.TB,
+	app *TestApp,
+	sessionToken string,
+	showtimeID int,
+	seats []domain.CartSeat,
+	cartTTL time.Duration,
+	seatTTL time.Duration) string {
+
 	t.Helper()
 	ctx := context.Background()
 
@@ -270,18 +279,26 @@ func createTestCartInCache(t testing.TB, app *TestApp, sessionToken string, show
 		Seats:      seats,
 	}
 
+	totalPrice := decimal.NewFromFloat(0)
+
+	for _, seat := range seats {
+		totalPrice = totalPrice.Add(seat.ExtraPrice)
+	}
+
+	cart.TotalPrice = totalPrice
+
 	cartBytes, err := json.Marshal(cart)
 	require.NoError(t, err)
 
 	pipe := app.RedisClient.TxPipeline()
 
-	pipe.Set(ctx, cart.Id, cartBytes, 10*time.Minute)
-	pipe.Set(ctx, fmt.Sprintf("cart:%s", sessionToken), cart.Id, 10*time.Minute)
+	pipe.Set(ctx, cart.Id, cartBytes, cartTTL)
+	pipe.Set(ctx, fmt.Sprintf("cart:%s", sessionToken), cart.Id, cartTTL)
 
 	seatLockSetKey := fmt.Sprintf("seat_locks:%d", showtimeID)
 	for _, seat := range seats {
 		lockKey := fmt.Sprintf("seat_lock:%d:%d", showtimeID, seat.Id)
-		pipe.Set(ctx, lockKey, sessionToken, 10*time.Minute)
+		pipe.Set(ctx, lockKey, sessionToken, seatTTL)
 		pipe.SAdd(ctx, seatLockSetKey, seat.Id)
 	}
 

@@ -1,0 +1,2 @@
+INSERT INTO users (id, first_name, last_name, email, password_hash, birth_date, gender, activated)
+VALUES (1, 'Test', 'User', 'test@test.com', '$2b$12$w5kBl0DbdVJ0Vh8Mcu5jQ.2wlf.5V2TZcQ6eY09N6lQj1OGLKfUBC', '1970-01-01', 'M', true);

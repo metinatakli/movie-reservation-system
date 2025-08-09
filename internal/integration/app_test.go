@@ -15,11 +15,12 @@ import (
 )
 
 type TestApp struct {
-	App            *app.Application
-	DB             *pgxpool.Pool
-	Mailer         *mailer.MockMailer
-	SessionManager *scs.SessionManager
-	RedisClient    redis.UniversalClient
+	App             *app.Application
+	DB              *pgxpool.Pool
+	Mailer          *mailer.MockMailer
+	SessionManager  *scs.SessionManager
+	RedisClient     redis.UniversalClient
+	PaymentProvider *payment.MockPaymentProvider
 }
 
 func newTestApp(cfg app.Config) (*TestApp, error) {
@@ -69,10 +70,11 @@ func newTestApp(cfg app.Config) (*TestApp, error) {
 	)
 
 	return &TestApp{
-		App:            application,
-		DB:             db,
-		RedisClient:    redisClient,
-		Mailer:         mailer,
-		SessionManager: sessionManager,
+		App:             application,
+		DB:              db,
+		RedisClient:     redisClient,
+		Mailer:          mailer,
+		SessionManager:  sessionManager,
+		PaymentProvider: paymentProvider,
 	}, nil
 }

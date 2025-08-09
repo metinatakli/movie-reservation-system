@@ -17,4 +17,8 @@ const (
 	// Token related constants
 	TestToken      = "r8zEhnVzNTZDf8WypfYBTU_FkFUm9jXnTmMrK-WuFQ8"
 	TestTokenScope = domain.UserActivationScope
+
+	// Checkout session related constants
+	TestCheckoutSessionId  = "cs_test_12345"
+	TestCheckoutSessionURL = "https://checkout.stripe.com/pay/cs_test_12345"
 )

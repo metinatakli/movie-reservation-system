@@ -6,6 +6,8 @@ import (
 )
 
 type MockPaymentProvider struct {
+	CheckoutSession *stripe.CheckoutSession
+	Err             error
 }
 
 func NewMockPaymentProvider() *MockPaymentProvider {
@@ -18,5 +20,5 @@ func (m *MockPaymentProvider) CreateCheckoutSession(
 	cart domain.Cart,
 	payment domain.Payment) (*stripe.CheckoutSession, error) {
 
-	return nil, nil
+	return m.CheckoutSession, m.Err
 }
