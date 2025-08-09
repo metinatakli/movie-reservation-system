@@ -17,30 +17,26 @@ func NewPostgresPaymentRepository(db *pgxpool.Pool) *PostgresPaymentRepository {
 	}
 }
 
-func (p *PostgresPaymentRepository) Create(ctx context.Context, payment domain.Payment) error {
+func (p *PostgresPaymentRepository) Create(ctx context.Context, payment *domain.Payment) error {
 	query := `
 		INSERT INTO payments (
 			user_id, 
-			stripe_checkout_session_id, 
 			amount, 
 			currency,
-			status, 
-			error_message, 
-			payment_date)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+			status
+		)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
 	`
 
-	_, err := p.db.Exec(
+	err := p.db.QueryRow(
 		ctx,
 		query,
 		payment.UserID,
-		payment.CheckoutSessionId,
 		payment.Amount,
 		payment.Currency,
 		payment.Status,
-		payment.ErrorMsg,
-		payment.PaymentDate,
-	)
+	).Scan(&payment.ID)
 
 	return err
 }

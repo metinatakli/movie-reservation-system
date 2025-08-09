@@ -19,7 +19,7 @@ const (
 type Payment struct {
 	ID                int
 	UserID            int
-	CheckoutSessionId string
+	CheckoutSessionId *string
 	Amount            decimal.Decimal
 	Currency          string
 	Status            PaymentStatus
@@ -30,6 +30,6 @@ type Payment struct {
 }
 
 type PaymentRepository interface {
-	Create(ctx context.Context, payment Payment) error
+	Create(ctx context.Context, payment *Payment) error
 	UpdateStatus(ctx context.Context, checkoutSessionID string, status PaymentStatus, errMsg string) error
 }

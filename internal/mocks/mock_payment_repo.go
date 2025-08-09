@@ -12,7 +12,7 @@ type MockPaymentRepo struct {
 	domain.PaymentRepository
 }
 
-func (m *MockPaymentRepo) Create(ctx context.Context, payment domain.Payment) error {
+func (m *MockPaymentRepo) Create(ctx context.Context, payment *domain.Payment) error {
 	args := m.Called(ctx, payment)
 	return args.Error(0)
 }

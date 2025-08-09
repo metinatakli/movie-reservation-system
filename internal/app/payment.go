@@ -25,18 +25,24 @@ const (
 func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *http.Request) {
 	sessionId := app.sessionManager.Token(r.Context())
 	cartId, err := app.redis.Get(r.Context(), cartSessionKey(sessionId)).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		app.serverErrorResponse(w, r, err)
-		return
-	}
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			app.notFoundResponseWithErr(w, r, fmt.Errorf("there is no cart bound to the current session"))
+			return
+		}
 
-	if cartId == "" {
-		app.notFoundResponseWithErr(w, r, fmt.Errorf("there is no cart bound to the current session"))
+		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	cartBytes, err := app.redis.Get(r.Context(), cartId).Bytes()
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			app.redis.Del(r.Context(), cartSessionKey(sessionId))
+			app.notFoundResponseWithErr(w, r, fmt.Errorf("cart not found or has expired, please try again"))
+			return
+		}
+
 		app.serverErrorResponse(w, r, err)
 		return
 	}
@@ -54,6 +60,17 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 	for _, seat := range cart.Seats {
 		ownerSessionId, err := app.redis.Get(r.Context(), seatLockKey(showtimeId, seat.Id)).Result()
 		if err != nil {
+			// If a seat lock is missing, the user's cart has expired
+			if errors.Is(err, redis.Nil) {
+				app.editConflictResponseWithErr(
+					w,
+					r,
+					fmt.Errorf("your selections have expired, please select your seats again"),
+				)
+
+				return
+			}
+
 			app.serverErrorResponse(w, r, err)
 			return
 		}
@@ -75,21 +92,20 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	checkoutSession, err := app.paymentProvider.CreateCheckoutSession(sessionId, user, cart)
+	payment := &domain.Payment{
+		UserID:   userId,
+		Amount:   cart.TotalPrice,
+		Currency: "USD",
+		Status:   domain.PaymentStatusPending,
+	}
+
+	err = app.paymentRepo.Create(r.Context(), payment)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
-	payment := domain.Payment{
-		UserID:            userId,
-		CheckoutSessionId: checkoutSession.ID,
-		Amount:            cart.TotalPrice,
-		Currency:          "USD",
-		Status:            domain.PaymentStatusPending,
-	}
-
-	err = app.paymentRepo.Create(r.Context(), payment)
+	checkoutSession, err := app.paymentProvider.CreateCheckoutSession(sessionId, user, cart, *payment)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return

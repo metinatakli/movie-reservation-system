@@ -15,7 +15,8 @@ func NewMockPaymentProvider() *MockPaymentProvider {
 func (m *MockPaymentProvider) CreateCheckoutSession(
 	sessionId string,
 	user *domain.User,
-	cart domain.Cart) (*stripe.CheckoutSession, error) {
+	cart domain.Cart,
+	payment domain.Payment) (*stripe.CheckoutSession, error) {
 
 	return nil, nil
 }

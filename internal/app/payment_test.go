@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -114,6 +115,26 @@ func (s *CheckoutSessionTestSuite) TestCreateCheckoutSessionHandler() {
 			wantErrMessage: fmt.Sprintf("seat %d doesn't belong to the current session", 1),
 		},
 		{
+			name: "should fail when payment record fails to be saved to the database",
+			setupMocks: func(sessionId string) {
+				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult("cart-id", nil)).Once()
+				s.redisClient.On("Get", mock.Anything, "cart-id").Return(redis.NewStringResult(cartDataStr, nil)).Once()
+
+				// add the mock calls for retrieving seat locks
+				s.redisClient.On("Get", mock.Anything, seatLockKey(1, 1)).
+					Return(redis.NewStringResult(sessionId, nil)).Once()
+
+				s.redisClient.On("Get", mock.Anything, seatLockKey(1, 2)).
+					Return(redis.NewStringResult(sessionId, nil)).Once()
+
+				s.userRepo.On("GetById", mock.Anything, mock.Anything).Return(&domain.User{ID: 1, Email: "test@test.com"}, nil)
+
+				s.paymentRepo.On("Create", mock.Anything, mock.Anything).Return(errors.New("database error"))
+			},
+			wantStatus:     http.StatusInternalServerError,
+			wantErrMessage: ErrInternalServer,
+		},
+		{
 			name: "should fail when payment provider fails to create checkout session",
 			setupMocks: func(sessionId string) {
 				s.redisClient.On("Get", mock.Anything, mock.Anything).Return(redis.NewStringResult("cart-id", nil)).Once()
@@ -127,6 +148,8 @@ func (s *CheckoutSessionTestSuite) TestCreateCheckoutSessionHandler() {
 					Return(redis.NewStringResult(sessionId, nil)).Once()
 
 				s.userRepo.On("GetById", mock.Anything, mock.Anything).Return(&domain.User{ID: 1, Email: "test@test.com"}, nil)
+
+				s.paymentRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 				s.paymentProvider.On("CreateCheckoutSession", mock.Anything, mock.Anything, mock.Anything).
 					Return(&stripe.CheckoutSession{}, fmt.Errorf("payment provider error"))
@@ -147,10 +170,10 @@ func (s *CheckoutSessionTestSuite) TestCreateCheckoutSessionHandler() {
 				s.userRepo.On("GetById", mock.Anything, mock.Anything).
 					Return(&domain.User{ID: 1, Email: "test@test.com"}, nil).Once()
 
+				s.paymentRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+
 				s.paymentProvider.On("CreateCheckoutSession", mock.Anything, mock.Anything, mock.Anything).
 					Return(&stripe.CheckoutSession{ID: "checkout-id", URL: "http://payment.url"}, nil)
-
-				s.paymentRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 			},
 			wantStatus: http.StatusOK,
 			wantResponse: &api.CheckoutSessionResponse{

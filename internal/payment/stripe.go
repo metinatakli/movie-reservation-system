@@ -25,7 +25,8 @@ func NewStripePaymentProvider(failureUrl, successUrl string) *StripePaymentProvi
 func (s *StripePaymentProvider) CreateCheckoutSession(
 	sessionId string,
 	user *domain.User,
-	cart domain.Cart) (*stripe.CheckoutSession, error) {
+	cart domain.Cart,
+	payment domain.Payment) (*stripe.CheckoutSession, error) {
 
 	var lineItems []*stripe.CheckoutSessionLineItemParams
 
@@ -65,6 +66,7 @@ func (s *StripePaymentProvider) CreateCheckoutSession(
 			"cart_id":    cart.Id,
 			"session_id": sessionId,
 			"user_id":    strconv.Itoa(user.ID),
+			"payment_id": strconv.Itoa(payment.ID),
 		},
 		CustomerEmail:     &user.Email,
 		ClientReferenceID: stripe.String(strconv.Itoa(user.ID)),

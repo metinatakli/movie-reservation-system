@@ -14,7 +14,8 @@ type MockPaymentProvider struct {
 func (m *MockPaymentProvider) CreateCheckoutSession(
 	sessionId string,
 	user *domain.User,
-	cart domain.Cart) (*stripe.CheckoutSession, error) {
+	cart domain.Cart,
+	payment domain.Payment) (*stripe.CheckoutSession, error) {
 
 	args := m.Called(sessionId, user, cart)
 	return args.Get(0).(*stripe.CheckoutSession), args.Error(1)
