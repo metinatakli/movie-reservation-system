@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 )
@@ -39,6 +41,39 @@ func (p *PostgresPaymentRepository) Create(ctx context.Context, payment *domain.
 	).Scan(&payment.ID)
 
 	return err
+}
+
+func (p *PostgresPaymentRepository) GetById(ctx context.Context, id int) (*domain.Payment, error) {
+	query := `
+		SELECT id, user_id, stripe_checkout_session_id, amount, currency, status, error_message, 
+			payment_date, created_at, updated_at
+		FROM payments
+		WHERE id = $1
+	`
+
+	payment := &domain.Payment{}
+	err := p.db.QueryRow(ctx, query, id).Scan(
+		&payment.ID,
+		&payment.UserID,
+		&payment.CheckoutSessionId,
+		&payment.Amount,
+		&payment.Currency,
+		&payment.Status,
+		&payment.ErrorMsg,
+		&payment.PaymentDate,
+		&payment.CreatedAt,
+		&payment.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrRecordNotFound
+		}
+
+		return nil, err
+	}
+
+	return payment, nil
 }
 
 func (p *PostgresPaymentRepository) UpdateStatus(

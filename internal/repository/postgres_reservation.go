@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,14 +24,20 @@ func (p *PostgresReservationRepository) Create(ctx context.Context, reservation 
 	return runInTx(ctx, p.db, func(tx pgx.Tx) error {
 		query := `
 			UPDATE payments
-			SET status = 'completed', payment_date = NOW(), updated_at = NOW()
-			WHERE stripe_checkout_session_id = $1
-			RETURNING id
+			SET status = 'completed', stripe_checkout_session_id = $1, payment_date = NOW(), updated_at = NOW()
+			WHERE id = $2 AND status = 'pending'
 		`
 
-		err := tx.QueryRow(ctx, query, reservation.CheckoutSessionID).Scan(&reservation.PaymentID)
+		cmdTag, err := tx.Exec(ctx, query, reservation.CheckoutSessionID, reservation.PaymentID)
 		if err != nil {
 			return err
+		}
+
+		if cmdTag.RowsAffected() != 1 {
+			return fmt.Errorf(
+				"failed to update payment: record not found or status was not pending (payment_id: %d)",
+				reservation.PaymentID,
+			)
 		}
 
 		query = `

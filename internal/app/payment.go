@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
 
@@ -121,7 +119,6 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 	}
 }
 
-// TODO: handle idempotency
 func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	payload, err := io.ReadAll(r.Body)
@@ -131,17 +128,9 @@ func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	event := stripe.Event{}
-
-	if err := json.Unmarshal(payload, &event); err != nil {
-		app.logger.Error("Webhook error while parsing basic request", "error", err.Error())
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
 	endpointSecret := app.config.Stripe.WebhookSecret
 	signatureHeader := r.Header.Get("Stripe-Signature")
-	event, err = webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
+	event, err := webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
 	if err != nil {
 		app.logger.Error("Webhook signature verification failed", "error", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
@@ -154,75 +143,107 @@ func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 		err := json.Unmarshal(event.Data.Raw, &session)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing webhook JSON: %v\n", err)
+			app.logger.Error("error parsing webhook JSON", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		go app.handleCheckoutSessionCompleted(context.Background(), session)
+		app.handleCheckoutSessionCompleted(w, r, session)
 	default:
 		fmt.Fprintf(os.Stderr, "Unhandled event type: %s\n", event.Type)
+		w.WriteHeader(http.StatusOK)
 	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 func (app *Application) handleCheckoutSessionCompleted(
-	ctx context.Context,
-	checkoutSession stripe.CheckoutSession) (err error) {
+	w http.ResponseWriter,
+	r *http.Request,
+	checkoutSession stripe.CheckoutSession) {
 
-	defer func() {
-		if err != nil {
-			app.logger.Error("checkout session handling failed", "error", err, "checkoutSessionID", checkoutSession.ID)
+	paymentIdStr := checkoutSession.Metadata["payment_id"]
+	if paymentIdStr == "" {
+		app.badRequestResponse(w, r, fmt.Errorf("payment_id is missing in the checkout session metadata"))
+		return
+	}
 
-			if checkoutSession.PaymentIntent == nil {
-				app.logger.Error("payment intent is nil, cannot issue refund", "checkoutSessionID", checkoutSession.ID)
-				return
-			}
+	paymentId, err := strconv.Atoi(paymentIdStr)
+	if err != nil {
+		app.badRequestResponse(w, r, fmt.Errorf("payment_id is not in the expected format: %w", err))
+		return
+	}
 
-			refundParams := &stripe.RefundParams{
-				PaymentIntent: stripe.String(checkoutSession.PaymentIntent.ID),
-			}
-
-			refundResp, refundErr := refund.New(refundParams)
-			if refundErr != nil {
-				app.logger.Error("failed to issue refund", "error", refundErr, "checkoutSessionID", checkoutSession.ID)
-				return
-			}
-
-			app.logger.Info("refund issued", "refundID", refundResp.ID, "checkoutSessionID", checkoutSession.ID)
-
-			dbErr := app.paymentRepo.UpdateStatus(ctx, checkoutSession.ID, domain.PaymentStatusRefunded, err.Error())
-			if dbErr != nil {
-				app.logger.Error("failed to save refund status to DB", "error", dbErr, "checkoutSessionID", checkoutSession.ID)
-			}
+	payment, err := app.paymentRepo.GetById(r.Context(), paymentId)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRecordNotFound):
+			app.notFoundResponseWithErr(w, r, fmt.Errorf("payment not found: %w", err))
+		default:
+			app.serverErrorResponse(w, r, fmt.Errorf("failed to get payment by id: %w", err))
 		}
-	}()
+
+		return
+	}
+
+	if payment.Status == domain.PaymentStatusCompleted {
+		app.logger.Info("idempotent request: payment already completed", "payment_id", paymentId)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if payment.Status != domain.PaymentStatusPending {
+		app.editConflictResponseWithErr(w, r, fmt.Errorf("payment status is not pending: %s", payment.Status))
+		return
+	}
 
 	// TODO: code for checking cart ownership logic is duplicated across some handlers, reduce the duplication
 	cartId := checkoutSession.Metadata["cart_id"]
-	cartBytes, err := app.redis.Get(ctx, cartId).Bytes()
+	sessionId := checkoutSession.Metadata["session_id"]
+	cartBytes, err := app.redis.Get(r.Context(), cartId).Bytes()
 	if err != nil {
-		return err
+		if errors.Is(err, redis.Nil) {
+			app.redis.Del(r.Context(), cartSessionKey(sessionId))
+			app.notFoundResponseWithErr(w, r, fmt.Errorf("cart not found or has expired, please try again"))
+			return
+		}
+
+		app.serverErrorResponse(w, r, err)
+		return
 	}
 
 	var cart domain.Cart
 
 	err = json.Unmarshal(cartBytes, &cart)
 	if err != nil {
-		return err
+		app.errorResponse(w, r, http.StatusUnprocessableEntity, "cannot process cart due to data format error")
+		return
 	}
 
 	showtimeId := cart.ShowtimeID
-	sessionId := checkoutSession.Metadata["session_id"]
+
 	for _, seat := range cart.Seats {
-		ownerSessionId, err := app.redis.Get(ctx, seatLockKey(showtimeId, seat.Id)).Result()
+		ownerSessionId, err := app.redis.Get(r.Context(), seatLockKey(showtimeId, seat.Id)).Result()
 		if err != nil {
-			return err
+			if errors.Is(err, redis.Nil) {
+				app.editConflictResponseWithErr(
+					w,
+					r,
+					fmt.Errorf("your selections have expired, please select your seats again"),
+				)
+
+				return
+			}
+
+			app.serverErrorResponse(w, r, err)
+			return
 		}
 
-		if ownerSessionId != sessionId {
-			return err
+		if sessionId != ownerSessionId {
+			app.editConflictResponseWithErr(
+				w,
+				r,
+				fmt.Errorf("seat %d doesn't belong to the current session", seat.Id),
+			)
+			return
 		}
 	}
 
@@ -238,19 +259,22 @@ func (app *Application) handleCheckoutSessionCompleted(
 
 	userId, err := strconv.Atoi(checkoutSession.Metadata["user_id"])
 	if err != nil || userId == 0 {
-		return fmt.Errorf("user_id is not in the expected format")
+		app.badRequestResponse(w, r, fmt.Errorf("user_id is missing or not in the expected format: %w", err))
+		return
 	}
 
 	reservation := domain.Reservation{
 		UserID:            userId,
 		ShowtimeID:        showtimeId,
 		CheckoutSessionID: checkoutSession.ID,
+		PaymentID:         paymentId,
 		ReservationSeats:  reservationSeats,
 	}
 
-	err = app.reservationRepo.Create(ctx, reservation)
+	err = app.reservationRepo.Create(r.Context(), reservation)
 	if err != nil {
-		return err
+		app.serverErrorResponse(w, r, fmt.Errorf("failed to create reservation: %w", err))
+		return
 	}
 
 	// remove cart and seat locks
@@ -258,17 +282,18 @@ func (app *Application) handleCheckoutSessionCompleted(
 	pipe := app.redis.TxPipeline()
 
 	for _, seat := range cart.Seats {
-		pipe.Del(ctx, seatLockKey(showtimeId, seat.Id))
-		pipe.SRem(ctx, seatSetKey(showtimeId), seat.Id)
+		pipe.Del(r.Context(), seatLockKey(showtimeId, seat.Id))
+		pipe.SRem(r.Context(), seatSetKey(showtimeId), seat.Id)
 	}
 
-	pipe.Del(ctx, cartId)
-	pipe.Del(ctx, cartSessionKey(sessionId))
+	pipe.Del(r.Context(), cartId)
+	pipe.Del(r.Context(), cartSessionKey(sessionId))
 
-	_, err = pipe.Exec(ctx)
+	_, err = pipe.Exec(r.Context())
 	if err != nil {
-		return err
+		app.serverErrorResponse(w, r, err)
+		return
 	}
 
-	return nil
+	w.WriteHeader(http.StatusOK)
 }
