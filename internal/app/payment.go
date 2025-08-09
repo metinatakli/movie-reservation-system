@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,54 +34,17 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	cartBytes, err := app.redis.Get(r.Context(), cartId).Bytes()
+	cart, err := app.getAndVerifyCart(r.Context(), cartId, sessionId)
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			app.redis.Del(r.Context(), cartSessionKey(sessionId))
-			app.notFoundResponseWithErr(w, r, fmt.Errorf("cart not found or has expired, please try again"))
-			return
-		}
-
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	var cart domain.Cart
-	err = json.Unmarshal(cartBytes, &cart)
-	if err != nil {
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	cart.Id = cartId
-	showtimeId := cart.ShowtimeID
-
-	for _, seat := range cart.Seats {
-		ownerSessionId, err := app.redis.Get(r.Context(), seatLockKey(showtimeId, seat.Id)).Result()
-		if err != nil {
-			// If a seat lock is missing, the user's cart has expired
-			if errors.Is(err, redis.Nil) {
-				app.editConflictResponseWithErr(
-					w,
-					r,
-					fmt.Errorf("your selections have expired, please select your seats again"),
-				)
-
-				return
-			}
-
+		switch {
+		case errors.Is(err, domain.ErrCartNotFound):
+			app.notFoundResponseWithErr(w, r, err)
+		case errors.Is(err, domain.ErrSeatLockExpired), errors.Is(err, domain.ErrSeatConflict):
+			app.editConflictResponseWithErr(w, r, err)
+		default:
 			app.serverErrorResponse(w, r, err)
-			return
 		}
-
-		if sessionId != ownerSessionId {
-			app.editConflictResponseWithErr(
-				w,
-				r,
-				fmt.Errorf("seat %d doesn't belong to the current session", seat.Id),
-			)
-			return
-		}
+		return
 	}
 
 	userId := app.contextGetUserId(r)
@@ -103,7 +67,7 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	checkoutSession, err := app.paymentProvider.CreateCheckoutSession(sessionId, user, cart, *payment)
+	checkoutSession, err := app.paymentProvider.CreateCheckoutSession(sessionId, user, *cart, *payment)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
@@ -195,57 +159,23 @@ func (app *Application) handleCheckoutSessionCompleted(
 		return
 	}
 
-	// TODO: code for checking cart ownership logic is duplicated across some handlers, reduce the duplication
 	cartId := checkoutSession.Metadata["cart_id"]
 	sessionId := checkoutSession.Metadata["session_id"]
-	cartBytes, err := app.redis.Get(r.Context(), cartId).Bytes()
+
+	cart, err := app.getAndVerifyCart(r.Context(), cartId, sessionId)
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			app.redis.Del(r.Context(), cartSessionKey(sessionId))
-			app.notFoundResponseWithErr(w, r, fmt.Errorf("cart not found or has expired, please try again"))
-			return
+		switch {
+		case errors.Is(err, domain.ErrCartNotFound):
+			app.notFoundResponseWithErr(w, r, err)
+		case errors.Is(err, domain.ErrSeatLockExpired), errors.Is(err, domain.ErrSeatConflict):
+			app.editConflictResponseWithErr(w, r, err)
+		default:
+			app.serverErrorResponse(w, r, err)
 		}
-
-		app.serverErrorResponse(w, r, err)
-		return
-	}
-
-	var cart domain.Cart
-
-	err = json.Unmarshal(cartBytes, &cart)
-	if err != nil {
-		app.errorResponse(w, r, http.StatusUnprocessableEntity, "cannot process cart due to data format error")
 		return
 	}
 
 	showtimeId := cart.ShowtimeID
-
-	for _, seat := range cart.Seats {
-		ownerSessionId, err := app.redis.Get(r.Context(), seatLockKey(showtimeId, seat.Id)).Result()
-		if err != nil {
-			if errors.Is(err, redis.Nil) {
-				app.editConflictResponseWithErr(
-					w,
-					r,
-					fmt.Errorf("your selections have expired, please select your seats again"),
-				)
-
-				return
-			}
-
-			app.serverErrorResponse(w, r, err)
-			return
-		}
-
-		if sessionId != ownerSessionId {
-			app.editConflictResponseWithErr(
-				w,
-				r,
-				fmt.Errorf("seat %d doesn't belong to the current session", seat.Id),
-			)
-			return
-		}
-	}
 
 	reservationSeats := make([]domain.ReservationSeat, len(cart.Seats))
 	for i, seat := range cart.Seats {
@@ -296,4 +226,40 @@ func (app *Application) handleCheckoutSessionCompleted(
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func (app *Application) getAndVerifyCart(ctx context.Context, cartId, sessionId string) (*domain.Cart, error) {
+	cartBytes, err := app.redis.Get(ctx, cartId).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			app.redis.Del(ctx, cartSessionKey(sessionId))
+			return nil, domain.ErrCartNotFound
+		}
+
+		return nil, err
+	}
+
+	var cart domain.Cart
+	if err := json.Unmarshal(cartBytes, &cart); err != nil {
+		return nil, err
+	}
+
+	cart.Id = cartId
+	showtimeId := cart.ShowtimeID
+
+	for _, seat := range cart.Seats {
+		ownerSessionId, err := app.redis.Get(ctx, seatLockKey(showtimeId, seat.Id)).Result()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return nil, domain.ErrSeatLockExpired
+			}
+			return nil, err
+		}
+
+		if sessionId != ownerSessionId {
+			return nil, domain.ErrSeatConflict
+		}
+	}
+
+	return &cart, nil
 }

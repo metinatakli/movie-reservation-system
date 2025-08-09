@@ -112,7 +112,7 @@ func (s *CheckoutSessionTestSuite) TestCreateCheckoutSessionHandler() {
 					Return(redis.NewStringResult("other-session-id", nil)).Once()
 			},
 			wantStatus:     http.StatusConflict,
-			wantErrMessage: fmt.Sprintf("seat %d doesn't belong to the current session", 1),
+			wantErrMessage: "a selected seat does not belong to the current session",
 		},
 		{
 			name: "should fail when payment record fails to be saved to the database",
