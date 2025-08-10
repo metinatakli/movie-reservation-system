@@ -43,7 +43,7 @@ type ReservationDetail struct {
 }
 
 type ReservationDetailSeat struct {
-	Row  string
+	Row  int
 	Col  int
 	Type string
 }

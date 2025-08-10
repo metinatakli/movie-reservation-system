@@ -271,8 +271,8 @@ func (s *ReservationsTestSuite) TestGetUserReservationById() {
 							CreatedAt:      time.Date(2024, 3, 10, 10, 0, 0, 0, time.UTC),
 						},
 						Seats: []domain.ReservationDetailSeat{
-							{Row: "1", Col: 1, Type: "standard"},
-							{Row: "1", Col: 2, Type: "vip"},
+							{Row: 1, Col: 1, Type: "standard"},
+							{Row: 1, Col: 2, Type: "vip"},
 						},
 						TheaterAmenities: []domain.Amenity{
 							{ID: 1, Name: "Parking", Description: "Free parking available"},
@@ -294,8 +294,8 @@ func (s *ReservationsTestSuite) TestGetUserReservationById() {
 				CreatedAt:      time.Date(2024, 3, 10, 10, 0, 0, 0, time.UTC),
 				TotalPrice:     decimal.NewFromFloat(25.50),
 				Seats: []api.ReservationSeat{
-					{Row: "1", Column: 1, Type: "standard"},
-					{Row: "1", Column: 2, Type: "vip"},
+					{Row: 1, Column: 1, Type: "standard"},
+					{Row: 1, Column: 2, Type: "vip"},
 				},
 				TheaterAmenities: &[]api.Amenity{
 					{Id: 1, Name: "Parking", Description: "Free parking available"},

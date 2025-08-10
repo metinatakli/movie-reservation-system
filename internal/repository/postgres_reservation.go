@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -220,8 +221,33 @@ func (p *PostgresReservationRepository) GetByReservationIdAndUserId(
 			h.name,
 			r.created_at,
 			p.amount,
-			h.id,
-			t.id
+			(
+				SELECT COALESCE(jsonb_agg(jsonb_build_object(
+					'row', s.seat_row, 
+					'col', s.seat_col, 
+					'type', s.seat_type)), '[]')
+				FROM reservation_seats rs
+				JOIN seats s ON rs.seat_id = s.id
+				WHERE rs.reservation_id = r.id
+			) AS seats,
+			(
+				SELECT COALESCE(jsonb_agg(jsonb_build_object(
+					'id', a.id, 
+					'name', a.name, 
+					'description', a.description)), '[]')
+				FROM hall_amenities ha
+				JOIN amenities a ON ha.amenity_id = a.id
+				WHERE ha.hall_id = h.id
+			) AS hall_amenities,
+			(
+				SELECT COALESCE(jsonb_agg(jsonb_build_object(
+					'id', a.id, 
+					'name', a.name, 
+					'description', a.description)), '[]')
+				FROM theater_amenities ta
+				JOIN amenities a ON ta.amenity_id = a.id
+				WHERE ta.theater_id = t.id
+			) AS theater_amenities
 		FROM reservations r
 		JOIN payments p ON r.payment_id = p.id
 		JOIN showtimes s ON r.showtime_id = s.id
@@ -229,11 +255,11 @@ func (p *PostgresReservationRepository) GetByReservationIdAndUserId(
 		JOIN halls h ON s.hall_id = h.id
 		JOIN theaters t ON h.theater_id = t.id
 		WHERE r.id = $1 AND r.user_id = $2
+		GROUP BY r.id, p.id, s.id, m.id, h.id, t.id
 	`
 
 	var reservationDetail domain.ReservationDetail
-	var theaterId int
-	var hallId int
+	var seatsJson, hallAmenitiesJson, theaterAmenitiesJson json.RawMessage
 
 	err := p.db.QueryRow(ctx, query, reservationId, userId).Scan(
 		&reservationDetail.ReservationID,
@@ -244,8 +270,9 @@ func (p *PostgresReservationRepository) GetByReservationIdAndUserId(
 		&reservationDetail.HallName,
 		&reservationDetail.CreatedAt,
 		&reservationDetail.TotalPrice,
-		&theaterId,
-		&hallId,
+		&seatsJson,
+		&hallAmenitiesJson,
+		&theaterAmenitiesJson,
 	)
 
 	if err != nil {
@@ -256,138 +283,17 @@ func (p *PostgresReservationRepository) GetByReservationIdAndUserId(
 		return nil, err
 	}
 
-	reservationSeats, err := p.retrieveReservationSeats(ctx, reservationId)
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(seatsJson, &reservationDetail.Seats); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal reservation seats: %w", err)
 	}
 
-	theaterAmenities, err := p.retrieveTheaterAmenities(ctx, theaterId)
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(hallAmenitiesJson, &reservationDetail.HallAmenities); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal hall amenities: %w", err)
 	}
 
-	hallAmenities, err := p.retrieveHallAmenities(ctx, hallId)
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(theaterAmenitiesJson, &reservationDetail.TheaterAmenities); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal theater amenities: %w", err)
 	}
-
-	reservationDetail.Seats = reservationSeats
-	reservationDetail.TheaterAmenities = theaterAmenities
-	reservationDetail.HallAmenities = hallAmenities
 
 	return &reservationDetail, nil
-}
-
-func (p *PostgresReservationRepository) retrieveTheaterAmenities(
-	ctx context.Context, theaterId int) ([]domain.Amenity, error) {
-
-	query := `
-		SELECT a.id, a.name, a.description
-		FROM amenities a
-		JOIN theater_amenities ta 
-			ON a.id = ta.amenity_id AND ta.theater_id = $1
-	`
-
-	rows, err := p.db.Query(ctx, query, theaterId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	amenities := make([]domain.Amenity, 0)
-
-	for rows.Next() {
-		var amenity domain.Amenity
-
-		err := rows.Scan(&amenity.ID, &amenity.Name, &amenity.Description)
-		if err != nil {
-			return nil, err
-		}
-
-		amenities = append(amenities, amenity)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return amenities, err
-}
-
-func (p *PostgresReservationRepository) retrieveHallAmenities(
-	ctx context.Context, hallId int) ([]domain.Amenity, error) {
-
-	query := `
-		SELECT a.id, a.name, a.description
-		FROM amenities a
-		JOIN hall_amenities ha 
-			ON a.id = ha.amenity_id AND ha.hall_id = $1
-	`
-
-	rows, err := p.db.Query(ctx, query, hallId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	amenities := make([]domain.Amenity, 0)
-
-	for rows.Next() {
-		var amenity domain.Amenity
-
-		err := rows.Scan(&amenity.ID, &amenity.Name, &amenity.Description)
-		if err != nil {
-			return nil, err
-		}
-
-		amenities = append(amenities, amenity)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return amenities, err
-}
-
-func (p *PostgresReservationRepository) retrieveReservationSeats(
-	ctx context.Context,
-	reservationId int) ([]domain.ReservationDetailSeat, error) {
-
-	query := `
-		SELECT s.seat_row, s.seat_col, s.seat_type
-		FROM reservation_seats rs
-		JOIN seats s ON rs.seat_id = s.id
-		WHERE reservation_id = $1
-	`
-
-	rows, err := p.db.Query(ctx, query, reservationId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	reservationSeats := make([]domain.ReservationDetailSeat, 0)
-
-	for rows.Next() {
-		var reservationSeat domain.ReservationDetailSeat
-
-		err := rows.Scan(
-			&reservationSeat.Row,
-			&reservationSeat.Col,
-			&reservationSeat.Type,
-		)
-
-		if err != nil {
-			return nil, err
-		}
-
-		reservationSeats = append(reservationSeats, reservationSeat)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return reservationSeats, nil
 }
