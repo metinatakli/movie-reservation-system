@@ -1,9 +1,11 @@
 package integration_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -110,6 +112,113 @@ func (s *ReservationTestSuite) TestGetReservationsOfUserHandler() {
 				setupReservationTestState(t, app)
 				executeSQLFile(t, app.DB, "testdata/reservations_down.sql")
 				executeSQLFile(t, app.DB, "testdata/reservations_up.sql")
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.Run(s.T(), s.app)
+	}
+}
+
+func (s *ReservationTestSuite) TestGetUserReservationById() {
+	cookies := s.app.authenticatedUserCookies(s.T())
+
+	scenarios := []Scenario{
+		{
+			Name:             "returns 401 if user is not authenticated",
+			Method:           "GET",
+			URL:              "/users/me/reservations/1",
+			ExpectedStatus:   http.StatusUnauthorized,
+			ExpectedResponse: `{"message": "You must be authenticated to access this resource"}`,
+		},
+		{
+			Name:             "returns 400 for invalid reservation ID",
+			Method:           "GET",
+			URL:              "/users/me/reservations/0",
+			Cookies:          cookies,
+			ExpectedStatus:   http.StatusBadRequest,
+			ExpectedResponse: `{"message": "reservation id must be greater than zero"}`,
+		},
+		{
+			Name:             "returns 404 for a reservation that does not exist",
+			Method:           "GET",
+			URL:              "/users/me/reservations/999",
+			Cookies:          cookies,
+			ExpectedStatus:   http.StatusNotFound,
+			ExpectedResponse: `{"message": "The requested resource not found"}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				executeSQLFile(t, app.DB, "testdata/reservation_details.sql")
+			},
+		},
+		{
+			Name:             "returns 404 if user tries to access another user's reservation",
+			Method:           "GET",
+			URL:              "/users/me/reservations/2",
+			Cookies:          cookies,
+			ExpectedStatus:   http.StatusNotFound,
+			ExpectedResponse: `{"message": "The requested resource not found"}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				executeSQLFile(t, app.DB, "testdata/reservation_details.sql")
+			},
+		},
+		{
+			Name:           "successfully returns reservation details for the authenticated user",
+			Method:         "GET",
+			URL:            "/users/me/reservations/1",
+			Cookies:        cookies,
+			ExpectedStatus: http.StatusOK,
+			ExpectedResponse: `{
+				"id": 1,
+				"movieTitle": "The Go Story",
+				"moviePosterUrl": "https://example.com/poster-go.jpg",
+				"theaterName": "Grand Cinema",
+				"hallName": "Hall A",
+				"totalPrice": "25",
+				"date": "2095-05-10T23:00:00+03:00",
+				"seats": [
+					{"row": 3, "column": 5, "type": "Standard"},
+					{"row": 3, "column": 6, "type": "Standard"}
+				],
+				"theaterAmenities": [
+					{"id": 1, "name": "Cafe", "description": "Serves coffee and snacks."},
+					{"id": 2, "name": "Parking", "description": "On-site parking available."}
+				],
+				"hallAmenities": [
+					{"id": 3, "name": "IMAX", "description": "Large-format screen."},
+					{"id": 4, "name": "Dolby Atmos", "description": "Immersive sound system."}
+				]
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				executeSQLFile(t, app.DB, "testdata/reservation_details.sql")
+			},
+		},
+		{
+			Name:           "successfully returns reservation with empty amenities",
+			Method:         "GET",
+			URL:            "/users/me/reservations/1",
+			Cookies:        cookies,
+			ExpectedStatus: http.StatusOK,
+			ExpectedResponse: `{
+				"id": 1,
+				"movieTitle": "The Go Story",
+				"moviePosterUrl": "https://example.com/poster-go.jpg",
+				"theaterName": "Grand Cinema",
+				"hallName": "Hall A",
+				"totalPrice": "25",
+				"date": "2095-05-10T23:00:00+03:00",
+				"seats": [
+					{"row": 3, "column": 5, "type": "Standard"},
+					{"row": 3, "column": 6, "type": "Standard"}
+				],
+				"theaterAmenities": [],
+				"hallAmenities": []
+			}`,
+			BeforeTestFunc: func(t testing.TB, app *TestApp) {
+				executeSQLFile(t, app.DB, "testdata/reservation_details.sql")
+				// Manually delete the amenities to test the empty slice case
+				_, err := app.DB.Exec(context.Background(), "TRUNCATE TABLE theater_amenities, hall_amenities")
+				require.NoError(t, err)
 			},
 		},
 	}

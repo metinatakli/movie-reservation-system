@@ -178,6 +178,7 @@ func (s *SeatMapTestSuite) TestGetSeatMapByShowtime() {
 func setupBaseSeatMapState(t testing.TB, app *TestApp) {
 	t.Helper()
 
+	executeSQLFile(t, app.DB, "testdata/movies_down.sql")
 	executeSQLFile(t, app.DB, "testdata/seats_down.sql")
 	executeSQLFile(t, app.DB, "testdata/showtimes_down.sql")
 	executeSQLFile(t, app.DB, "testdata/seat_reservations_down.sql")
