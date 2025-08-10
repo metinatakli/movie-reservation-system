@@ -46,15 +46,15 @@ func toReservationSummaries(reservations []domain.ReservationSummary) []api.Rese
 	reservationSummaries := make([]api.ReservationSummary, len(reservations))
 
 	for i, v := range reservations {
-		ReservationSummary := &reservationSummaries[i]
-
-		ReservationSummary.Id = v.ReservationID
-		ReservationSummary.MovieTitle = v.MovieTitle
-		ReservationSummary.MoviePosterUrl = v.MoviePosterUrl
-		ReservationSummary.HallName = v.HallName
-		ReservationSummary.TheaterName = v.TheaterName
-		ReservationSummary.Date = v.ShowtimeDate
-		ReservationSummary.CreatedAt = v.CreatedAt
+		reservationSummaries[i] = api.ReservationSummary{
+			Id:             v.ReservationID,
+			MovieTitle:     v.MovieTitle,
+			MoviePosterUrl: v.MoviePosterUrl,
+			HallName:       v.HallName,
+			TheaterName:    v.TheaterName,
+			Date:           v.ShowtimeDate,
+			CreatedAt:      v.CreatedAt,
+		}
 	}
 
 	return reservationSummaries
