@@ -337,11 +337,12 @@ func (app *Application) run() error {
 func (app *Application) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
 	r.Use(app.recoverPanic)
 	r.Use(app.sessionManager.LoadAndSave)
 	r.Use(app.ensureGuestUserSession)
+	r.Use(app.loggingMiddleware)
 
 	h := api.HandlerFromMux(app, chi.NewRouter())
 
