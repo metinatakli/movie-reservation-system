@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -118,4 +119,13 @@ func (app *Application) loggingMiddleware(next http.Handler) http.Handler {
 			requestLogger.Info("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String())
 		}
 	})
+}
+
+func (app *Application) contextGetLogger(r *http.Request) *slog.Logger {
+	logger, ok := r.Context().Value(loggerContextKey).(*slog.Logger)
+	if !ok {
+		return app.logger
+	}
+
+	return logger
 }

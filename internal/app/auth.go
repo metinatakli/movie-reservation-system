@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 )
 
 func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
+	logger := app.contextGetLogger(r)
+
 	var input api.RegisterRequest
 
 	err := app.readJSON(w, r, &input)
@@ -48,20 +51,25 @@ func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrUserAlreadyExists):
-			app.logError(r, fmt.Errorf("attempt to register existing email %s: %w", user.Email, err))
+			logger.Warn("registration attempt for existing email")
 			// do not return the info of existence of email to avoid user enumeration attacks
 			app.badRequestResponse(w, r, fmt.Errorf("invalid input data"))
 		default:
+			logger.Error("failed to create user", "error", err)
 			app.serverErrorResponse(w, r, err)
 		}
 
 		return
 	}
 
-	go func() {
+	go func(ctx context.Context) {
+		// new logger for this goroutine, inheriting context from the request
+		// important for tracing across async boundaries
+		gLogger := app.contextGetLogger(r.WithContext(ctx))
+
 		defer func() {
 			if err := recover(); err != nil {
-				app.logger.Error(fmt.Sprintf("panic occurred during sending activation mail: %v", err))
+				gLogger.Error("panic occurred during sending activation mail", "panic", r)
 			}
 		}()
 
@@ -72,9 +80,11 @@ func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 		err = app.mailer.Send(user.Email, "user_welcome.tmpl", data)
 		if err != nil {
-			app.logger.Error(err.Error())
+			gLogger.Error("failed to send activation email", "error", err)
+		} else {
+			gLogger.Info("activation email sent successfully")
 		}
-	}()
+	}(r.Context())
 
 	resp := api.UserResponse{
 		Id:        user.ID,
@@ -96,6 +106,8 @@ func (app *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Application) ActivateUser(w http.ResponseWriter, r *http.Request) {
+	logger := app.contextGetLogger(r)
+
 	var input api.UserActivationRequest
 
 	err := app.readJSON(w, r, &input)
@@ -124,7 +136,7 @@ func (app *Application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.Activated {
-		app.logger.Error(fmt.Sprintf("user with id %d is already activated", user.ID))
+		logger.Warn("attempt to activate already activated user")
 		app.editConflictResponse(w, r)
 		return
 	}
@@ -150,6 +162,8 @@ func (app *Application) ActivateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
+	logger := app.contextGetLogger(r)
+
 	userId := app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String())
 	if userId != 0 {
 		resp := api.AlreadyLoggedInResponse{
@@ -174,6 +188,7 @@ func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
 
 	err = app.validator.Struct(input)
 	if err != nil {
+		logger.Warn("login validation failed")
 		app.invalidCredentialsResponse(w, r)
 		return
 	}
@@ -182,8 +197,10 @@ func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrRecordNotFound):
+			logger.Warn("login attempt for non-existent user")
 			app.invalidCredentialsResponse(w, r)
 		default:
+			logger.Error("failed to get user by email during login", "error", err)
 			app.serverErrorResponse(w, r, err)
 		}
 
@@ -192,6 +209,7 @@ func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
 
 	err = bcrypt.CompareHashAndPassword(user.Password.Hash, []byte(input.Password))
 	if err != nil {
+		logger.Warn("login failed due to incorrect password")
 		app.invalidCredentialsResponse(w, r)
 		return
 	}
@@ -209,7 +227,7 @@ func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
 	newSessionId := app.sessionManager.Token(r.Context())
 	err = app.migrateSessionData(r.Context(), oldSessionId, newSessionId)
 	if err != nil {
-		app.logger.Error(
+		logger.Error(
 			"failed to migrate session data",
 			"error", err,
 			"oldSessionId", oldSessionId,
