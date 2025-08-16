@@ -337,15 +337,13 @@ func (app *Application) run() error {
 func (app *Application) Routes() http.Handler {
 	r := chi.NewRouter()
 
-	r.NotFound(app.notFoundResponse)
-
 	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
 	r.Use(app.recoverPanic)
 	r.Use(app.sessionManager.LoadAndSave)
 	r.Use(app.ensureGuestUserSession)
 
-	h := api.HandlerFromMux(app, r)
+	h := api.HandlerFromMux(app, chi.NewRouter())
 
 	r.Mount("/", h)
 
@@ -398,6 +396,8 @@ func (app *Application) Routes() http.Handler {
 	r.Route("/webhook", func(r chi.Router) {
 		r.Post("/", app.StripeWebhookHandler)
 	})
+
+	r.NotFound(app.notFoundResponse)
 
 	return r
 }
