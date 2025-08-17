@@ -20,13 +20,13 @@ const (
 )
 
 func (app *Application) logError(r *http.Request, err error) {
-	var (
-		method    = r.Method
-		uri       = r.URL.RequestURI()
-		requestId = middleware.GetReqID(r.Context())
-	)
+	logger := app.contextGetLogger(r)
+	logger.Error(err.Error(), "method", r.Method, "uri", r.URL.RequestURI())
+}
 
-	app.logger.Error(err.Error(), "method", method, "uri", uri, "request-id", requestId)
+func (app *Application) logClientError(r *http.Request, message string) {
+	logger := app.contextGetLogger(r)
+	logger.Warn(message, "method", r.Method, "uri", r.URL.RequestURI())
 }
 
 // The errorResponse() method is a generic helper for sending JSON-formatted error
@@ -51,18 +51,23 @@ func (app *Application) serverErrorResponse(w http.ResponseWriter, r *http.Reque
 }
 
 func (app *Application) notFoundResponse(w http.ResponseWriter, r *http.Request) {
+	app.logClientError(r, ErrNotFound)
 	app.errorResponse(w, r, http.StatusNotFound, ErrNotFound)
 }
 
 func (app *Application) notFoundResponseWithErr(w http.ResponseWriter, r *http.Request, err error) {
+	app.logClientError(r, err.Error())
 	app.errorResponse(w, r, http.StatusNotFound, err.Error())
 }
 
 func (app *Application) badRequestResponse(w http.ResponseWriter, r *http.Request, err error) {
+	app.logClientError(r, err.Error())
 	app.errorResponse(w, r, http.StatusBadRequest, err.Error())
 }
 
 func (app *Application) failedValidationResponse(w http.ResponseWriter, r *http.Request, err error) {
+	app.logClientError(r, "request validation failed")
+
 	var validationErrs []api.ValidationError
 
 	for _, err := range err.(validator.ValidationErrors) {
@@ -87,10 +92,12 @@ func (app *Application) failedValidationResponse(w http.ResponseWriter, r *http.
 }
 
 func (app *Application) editConflictResponse(w http.ResponseWriter, r *http.Request) {
+	app.logClientError(r, ErrEditConflict)
 	app.errorResponse(w, r, http.StatusConflict, ErrEditConflict)
 }
 
 func (app *Application) editConflictResponseWithErr(w http.ResponseWriter, r *http.Request, err error) {
+	app.logClientError(r, err.Error())
 	app.errorResponse(w, r, http.StatusConflict, err.Error())
 }
 
@@ -99,9 +106,11 @@ func (app *Application) invalidCredentialsResponse(w http.ResponseWriter, r *htt
 }
 
 func (app *Application) unauthorizedAccessResponse(w http.ResponseWriter, r *http.Request) {
+	app.logClientError(r, ErrUnauthorizedAccess)
 	app.errorResponse(w, r, http.StatusUnauthorized, ErrUnauthorizedAccess)
 }
 
 func (app *Application) forbiddenResponse(w http.ResponseWriter, r *http.Request) {
+	app.logClientError(r, ErrForbiddenAccess)
 	app.errorResponse(w, r, http.StatusForbidden, ErrForbiddenAccess)
 }
