@@ -1,9 +1,9 @@
 package app
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -20,7 +20,8 @@ func (app *Application) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrRecordNotFound):
-			app.logger.Error("User ID in session but not found in DB", "userId", userId)
+			logger := app.contextGetLogger(r)
+			logger.Error("data integrity issue: user ID from valid session not found in database")
 			app.notFoundResponse(w, r)
 		default:
 			app.serverErrorResponse(w, r, err)
@@ -120,6 +121,8 @@ func (app *Application) UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *Application) InitiateUserDeletion(w http.ResponseWriter, r *http.Request) {
+	logger := app.contextGetLogger(r)
+
 	var input api.InitiateUserDeletionRequest
 
 	err := app.readJSON(w, r, &input)
@@ -130,6 +133,7 @@ func (app *Application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 
 	err = app.validator.Struct(input)
 	if err != nil {
+		logger.Warn("user deletion initiation failed: password validation failed")
 		app.invalidCredentialsResponse(w, r)
 		return
 	}
@@ -150,6 +154,7 @@ func (app *Application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 
 	err = bcrypt.CompareHashAndPassword(user.Password.Hash, []byte(input.Password))
 	if err != nil {
+		logger.Warn("user deletion initiation failed: incorrect password provided")
 		app.invalidCredentialsResponse(w, r)
 		return
 	}
@@ -166,10 +171,12 @@ func (app *Application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	go func() {
+	go func(ctx context.Context) {
+		gLogger := app.contextGetLogger(r.WithContext(ctx))
+
 		defer func() {
 			if err := recover(); err != nil {
-				app.logger.Error(fmt.Sprintf("panic occurred during sending user deletion mail: %v", err))
+				gLogger.Error("panic occurred during sending user deletion mail", "panic", r)
 			}
 		}()
 
@@ -180,14 +187,18 @@ func (app *Application) InitiateUserDeletion(w http.ResponseWriter, r *http.Requ
 
 		err = app.mailer.Send(user.Email, "user_deletion.tmpl", data)
 		if err != nil {
-			app.logger.Error(err.Error())
+			gLogger.Error("failed to send user deletion email", "error", err)
+		} else {
+			gLogger.Info("user deletion email sent successfully")
 		}
-	}()
+	}(r.Context())
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
 func (app *Application) CompleteUserDeletion(w http.ResponseWriter, r *http.Request) {
+	logger := app.contextGetLogger(r)
+
 	var input api.CompleteUserDeletionRequest
 
 	err := app.readJSON(w, r, &input)
@@ -218,15 +229,13 @@ func (app *Application) CompleteUserDeletion(w http.ResponseWriter, r *http.Requ
 	userId := app.contextGetUserId(r)
 
 	if user.ID != userId {
-		app.logger.Error("unauthorized user deletion attempt",
-			"attemptingUserId", userId,
-			"targetUserId", user.ID)
-
+		logger.Error("CRITICAL: unauthorized user deletion attempt", "target_user_id", user.ID)
 		app.forbiddenResponse(w, r)
 
 		return
 	}
 
+	// TODO: add below logic to a transaction, unable to delete token is a critical security issue
 	err = app.userRepo.Delete(r.Context(), user)
 	if err != nil {
 		switch {
@@ -241,9 +250,7 @@ func (app *Application) CompleteUserDeletion(w http.ResponseWriter, r *http.Requ
 
 	err = app.tokenRepo.DeleteAllForUser(r.Context(), domain.UserDeletionScope, userId)
 	if err != nil {
-		app.logger.Warn("failed to delete tokens for user while completing user deletion",
-			"error", err,
-			"userId", userId)
+		logger.Warn("failed to delete tokens for user after completing user deletion", "error", err)
 	}
 
 	app.sessionManager.Destroy(r.Context())
