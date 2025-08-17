@@ -27,6 +27,7 @@ import (
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
 	"github.com/redis/go-redis/v9"
+	"github.com/riandyrn/otelchi"
 	"github.com/stripe/stripe-go/v82"
 )
 
@@ -354,6 +355,7 @@ func (app *Application) Routes() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(app.recoverPanic)
+	r.Use(otelchi.Middleware("movie-reservation-api", otelchi.WithChiRoutes(r)))
 	r.Use(app.sessionManager.LoadAndSave)
 	r.Use(app.ensureGuestUserSession)
 	r.Use(app.loggingMiddleware)
