@@ -177,6 +177,8 @@ func (app *Application) GetMovieShowtimes(
 	movieId int,
 	params api.GetMovieShowtimesParams) {
 
+	logger := app.contextGetLogger(r)
+
 	if movieId < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("movie ID must be greater than zero"))
 		return
@@ -208,12 +210,14 @@ func (app *Application) GetMovieShowtimes(
 	}
 
 	if !movieExists {
+		logger.Warn("showtime request for non-existent movie", "movie_id", movieId)
 		app.notFoundResponse(w, r)
 		return
 	}
 
 	date, err := time.Parse(time.DateOnly, *params.Date)
 	if err != nil {
+		logger.Warn("failed to parse date parameter for showtimes", "date_param", *params.Date, "error", err)
 		app.serverErrorResponse(w, r, err)
 		return
 	}
