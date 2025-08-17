@@ -36,6 +36,8 @@ var lockSeatsScript = redis.NewScript(`
 `)
 
 func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
+	logger := app.contextGetLogger(r)
+
 	if showtimeID < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
 		return
@@ -58,11 +60,13 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 	sessionID := app.sessionManager.Token(r.Context())
 	cartId, err := app.redis.Get(r.Context(), cartSessionKey(sessionID)).Result()
 	if err != nil && err != redis.Nil {
+		logger.Error("failed to check for existing cart in redis", "error", err)
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	if cartId != "" {
+		logger.Warn("cart creation attempt rejected: a cart already exists for this session")
 		app.badRequestResponse(w, r, fmt.Errorf("cannot create new cart if a cart already exists in session"))
 		return
 	}
@@ -83,6 +87,7 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 
 	for _, seatID := range seatIds {
 		if reservedSeatIds[seatID] {
+			logger.Warn("cart creation conflict: user selected an already reserved seat", "seat_id", seatID)
 			app.editConflictResponseWithErr(w, r, fmt.Errorf("some of the selected seats are already reserved"))
 			return
 		}
@@ -95,6 +100,7 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	if len(seatIds) != len(showtimeSeats.Seats) {
+		logger.Warn("cart creation failed: one or more requested seat IDs do not exist for the showtime", "requested_seats", seatIds)
 		app.notFoundResponse(w, r)
 		return
 	}
@@ -103,6 +109,7 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrSeatAlreadyReserved):
+			logger.Warn("cart creation conflict due to race condition: user selected an already locked seat")
 			app.editConflictResponseWithErr(w, r, fmt.Errorf("some of the selected seats are already reserved"))
 		default:
 			app.serverErrorResponse(w, r, fmt.Errorf("seats couldn't be acquired: %w", err))
@@ -113,6 +120,7 @@ func (app *Application) CreateCartHandler(w http.ResponseWriter, r *http.Request
 
 	cart, err := app.createCart(r.Context(), seatIds, showtimeID, sessionID, showtimeSeats)
 	if err != nil {
+		logger.Error("cart creation process failed", "error", err)
 		app.serverErrorResponse(w, r, fmt.Errorf("cart couldn't be created: %w", err))
 		return
 	}
@@ -245,6 +253,8 @@ func seatSetKey(showtimeID int) string {
 }
 
 func (app *Application) DeleteCartHandler(w http.ResponseWriter, r *http.Request, showtimeID int) {
+	logger := app.contextGetLogger(r)
+
 	if showtimeID < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
 		return
@@ -267,6 +277,7 @@ func (app *Application) DeleteCartHandler(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			// The session points to a cart that no longer exists, delete the session key
+			logger.Warn("dangling cart session key found and cleaned up", "dangling_cart_id", cartId)
 			app.redis.Del(r.Context(), cartSessionKey(sessionID))
 			app.notFoundResponse(w, r)
 			return
@@ -279,11 +290,17 @@ func (app *Application) DeleteCartHandler(w http.ResponseWriter, r *http.Request
 
 	err = json.Unmarshal(cartBytes, &cart)
 	if err != nil {
+		logger.Error("failed to unmarshal cart from redis", "cart_id", cartId, "error", err)
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
 	if cart.ShowtimeID != showtimeID {
+		logger.Warn(
+			"cart deletion attempt with mismatched showtime ID in URL",
+			"cart_showtime_id", cart.ShowtimeID,
+			"url_showtime_id", showtimeID,
+		)
 		app.notFoundResponse(w, r)
 		return
 	}
