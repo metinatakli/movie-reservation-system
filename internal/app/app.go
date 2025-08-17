@@ -83,12 +83,13 @@ type StripeConfig struct {
 }
 
 type Config struct {
-	Port   int
-	Env    string
-	DB     DBConfig
-	Redis  RedisConfig
-	SMTP   SMTPConfig
-	Stripe StripeConfig
+	Port             int
+	Env              string
+	DB               DBConfig
+	Redis            RedisConfig
+	SMTP             SMTPConfig
+	Stripe           StripeConfig
+	OtelCollectorUrl string
 }
 
 func loadFlags() Config {
@@ -117,6 +118,8 @@ func loadFlags() Config {
 	flag.StringVar(&cfg.Stripe.SuccessURL, "stripe-success-url", "https://example.com/success.html", "Stripe payment success page")
 	flag.StringVar(&cfg.Stripe.FailureURL, "stripe-failure-url", "https://example.com/failure.html", "Stripe payment failure page")
 
+	flag.StringVar(&cfg.OtelCollectorUrl, "otel-collector-url", "", "OpenTelemetry collector URL")
+
 	displayVersion := flag.Bool("version", false, "Display version and exit")
 
 	flag.Parse()
@@ -132,7 +135,7 @@ func loadFlags() Config {
 func newApp(cfg Config) (*Application, error) {
 	stripe.Key = cfg.Stripe.SecretKey
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	validator := appvalidator.NewValidator()
 
@@ -225,6 +228,17 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+
+	otelShutdown, err := app.InitTelemetry()
+	if err != nil {
+		app.logger.Error("failed to initialize telemetry", "error", err)
+		return err
+	}
+
+	defer func() {
+		app.logger.Info("shutting down OpenTelemetry")
+		otelShutdown(context.Background())
+	}()
 
 	defer app.db.Close()
 	defer app.redis.Close()

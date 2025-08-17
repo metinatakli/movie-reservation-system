@@ -14,7 +14,7 @@ confirm:
 .PHONY: run
 run:
 	go run ./cmd/api -db-dsn=${DB_DSN} -redis-url=${REDIS_URL} -smtp-username=${SMTP_USERNAME} -smtp-password=${SMTP_PASSWORD} \
-	-stripe-key=${STRIPE_KEY} -stripe-webhook-secret=${STRIPE_WEBHOOK_SECRET}
+	-stripe-key=${STRIPE_KEY} -stripe-webhook-secret=${STRIPE_WEBHOOK_SECRET} -otel-collector-url=${OTEL_COLLECTOR_URL}
 
 ## generate: generate the OpenAPI server code
 .PHONY: generate
@@ -50,11 +50,7 @@ db/migrations/reset: confirm
 .PHONY: db/seed
 db/seed:
 	@echo 'Seeding database with $(file)...'
-ifeq ($(ENV), development)
 	docker exec -i ${DB_CONTAINER} psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} < ./migrations/seed/$(file)
-else
-	@echo 'Skipping seeding (only allowed in development).'
-endif
 
 ## db/seed/list: List available mock data files
 .PHONY: db/seed/list

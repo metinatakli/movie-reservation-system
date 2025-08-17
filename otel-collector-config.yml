@@ -1,0 +1,45 @@
+# 1. Define the receivers (how data comes IN)
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+# 2. Define the exporters (how data goes OUT)
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  otlphttp:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  debug:
+    verbosity: detailed
+
+# 3. Define the processors (how data is transformed in the middle)
+processors:
+  batch:
+    # How long to wait before sending a batch, even if it's not full.
+    timeout: 1s
+    # How many items (spans, metrics, logs) to put in a batch before sending.
+    send_batch_size: 512
+
+# 4. Define the service pipelines (connecting receivers, processors, and exporters)
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp, debug]
