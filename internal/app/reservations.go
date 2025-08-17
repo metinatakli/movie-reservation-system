@@ -77,6 +77,8 @@ func toPagination(params api.GetReservationsOfUserHandlerParams) domain.Paginati
 }
 
 func (app *Application) GetUserReservationById(w http.ResponseWriter, r *http.Request, reservationId int) {
+	logger := app.contextGetLogger(r)
+
 	if reservationId <= 0 {
 		app.badRequestResponse(w, r, fmt.Errorf("reservation id must be greater than zero"))
 		return
@@ -88,6 +90,10 @@ func (app *Application) GetUserReservationById(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrRecordNotFound):
+			logger.Warn(
+				"user attempt to access non-existent or unauthorized reservation",
+				"reservation_id", reservationId,
+			)
 			app.notFoundResponse(w, r)
 		default:
 			app.serverErrorResponse(w, r, err)

@@ -47,6 +47,8 @@ func (app *Application) GetSeatMapByShowtime(
 	r *http.Request,
 	showtimeID int) {
 
+	logger := app.contextGetLogger(r)
+
 	if showtimeID < 1 {
 		app.badRequestResponse(w, r, fmt.Errorf("showtime ID must be greater than zero"))
 		return
@@ -59,6 +61,7 @@ func (app *Application) GetSeatMapByShowtime(
 	}
 
 	if len(showtimeSeats.Seats) == 0 {
+		logger.Warn("seat map not found for showtime", "showtime_id", showtimeID)
 		app.notFoundResponse(w, r)
 		return
 	}
@@ -81,12 +84,12 @@ func (app *Application) updateSeatAvailability(ctx context.Context, showtimeID i
 	cmd := filterValidLockSeats.Run(ctx, app.redis, []string{seatSetKey(showtimeID)}, showtimeID)
 	lockedSeatIds, err := cmd.Int64Slice()
 	if err != nil {
-		return fmt.Errorf("updating seat availability for showtime %d: %w", showtimeID, err)
+		return fmt.Errorf("failed to run filterValidLockSeats script: %w", err)
 	}
 
 	reservedSeats, err := app.reservationRepo.GetSeatsByShowtimeId(ctx, showtimeID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get reserved seats from DB: %w", err)
 	}
 
 	unavailableSeats := make(map[int]bool)
