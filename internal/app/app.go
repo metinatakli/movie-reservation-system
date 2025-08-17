@@ -15,6 +15,7 @@ import (
 
 	"github.com/alexedwards/scs/goredisstore"
 	"github.com/alexedwards/scs/v2"
+	"github.com/exaring/otelpgx"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-playground/validator/v10"
@@ -284,10 +285,15 @@ func NewDatabasePool(cfg Config) (*pgxpool.Pool, error) {
 
 	config.MaxConnIdleTime = cfg.DB.MaxIdleTime
 	config.MaxConns = int32(cfg.DB.MaxOpenConns)
+	config.ConnConfig.Tracer = otelpgx.NewTracer()
 
 	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := otelpgx.RecordStats(db); err != nil {
+		return nil, fmt.Errorf("unable to record database stats: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
