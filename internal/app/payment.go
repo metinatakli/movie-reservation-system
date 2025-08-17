@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/metinatakli/movie-reservation-system/api"
 	"github.com/metinatakli/movie-reservation-system/internal/domain"
 	"github.com/redis/go-redis/v9"
@@ -22,6 +22,8 @@ const (
 )
 
 func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *http.Request) {
+	logger := app.contextGetLogger(r)
+
 	sessionId := app.sessionManager.Token(r.Context())
 	cartId, err := app.redis.Get(r.Context(), cartSessionKey(sessionId)).Result()
 	if err != nil {
@@ -38,8 +40,13 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrCartNotFound):
+			logger.Warn("checkout attempt failed: cart has expired or was not found", "cart_id", cartId)
 			app.notFoundResponseWithErr(w, r, err)
-		case errors.Is(err, domain.ErrSeatLockExpired), errors.Is(err, domain.ErrSeatConflict):
+		case errors.Is(err, domain.ErrSeatLockExpired):
+			logger.Warn("checkout attempt failed: seat locks have expired for cart", "cart_id", cartId)
+			app.editConflictResponseWithErr(w, r, err)
+		case errors.Is(err, domain.ErrSeatConflict):
+			logger.Warn("checkout attempt failed: cart contains seat lock conflicts", "cart_id", cartId)
 			app.editConflictResponseWithErr(w, r, err)
 		default:
 			app.serverErrorResponse(w, r, err)
@@ -61,17 +68,23 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 		Status:   domain.PaymentStatusPending,
 	}
 
+	logger.Info("creating payment intent record", "user_id", userId, "amount", cart.TotalPrice.String())
+
 	err = app.paymentRepo.Create(r.Context(), payment)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
 
+	logger.Info("payment intent created successfully, creating provider session", "payment_id", payment.ID)
+
 	checkoutSession, err := app.paymentProvider.CreateCheckoutSession(sessionId, user, *cart, *payment)
 	if err != nil {
 		app.serverErrorResponse(w, r, err)
 		return
 	}
+
+	logger.Info("provider session created successfully", "payment_id", payment.ID)
 
 	resp := api.CheckoutSessionResponse{
 		RedirectUrl: checkoutSession.URL,
@@ -84,10 +97,12 @@ func (app *Application) CreateCheckoutSessionHandler(w http.ResponseWriter, r *h
 }
 
 func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	logger := app.logger.With("request_id", middleware.GetReqID(r.Context()))
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
-		app.logger.Error("Error reading request body", "error", err)
+		logger.Error("Error reading webhook request body", "error", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
@@ -96,10 +111,14 @@ func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Requ
 	signatureHeader := r.Header.Get("Stripe-Signature")
 	event, err := webhook.ConstructEvent(payload, signatureHeader, endpointSecret)
 	if err != nil {
-		app.logger.Error("Webhook signature verification failed", "error", err.Error())
+		logger.Error("Webhook signature verification failed", "error", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	logger = logger.With("stripe_event_id", event.ID, "stripe_event_type", event.Type)
+	ctx := context.WithValue(r.Context(), loggerContextKey, logger)
+	r = r.WithContext(ctx)
 
 	switch event.Type {
 	case "checkout.session.completed":
@@ -107,14 +126,14 @@ func (app *Application) StripeWebhookHandler(w http.ResponseWriter, r *http.Requ
 
 		err := json.Unmarshal(event.Data.Raw, &session)
 		if err != nil {
-			app.logger.Error("error parsing webhook JSON", "error", err)
+			logger.Error("error parsing webhook JSON", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		app.handleCheckoutSessionCompleted(w, r, session)
 	default:
-		fmt.Fprintf(os.Stderr, "Unhandled event type: %s\n", event.Type)
+		logger.Info("unhandled webhook event type received")
 		w.WriteHeader(http.StatusOK)
 	}
 }
@@ -123,6 +142,8 @@ func (app *Application) handleCheckoutSessionCompleted(
 	w http.ResponseWriter,
 	r *http.Request,
 	checkoutSession stripe.CheckoutSession) {
+
+	logger := app.contextGetLogger(r)
 
 	paymentIdStr := checkoutSession.Metadata["payment_id"]
 	if paymentIdStr == "" {
@@ -148,13 +169,17 @@ func (app *Application) handleCheckoutSessionCompleted(
 		return
 	}
 
+	logger = logger.With("payment_id", payment.ID)
+	r = r.WithContext(context.WithValue(r.Context(), loggerContextKey, logger))
+
 	if payment.Status == domain.PaymentStatusCompleted {
-		app.logger.Info("idempotent request: payment already completed", "payment_id", paymentId)
+		logger.Info("idempotent request: payment already completed")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	if payment.Status != domain.PaymentStatusPending {
+		logger.Warn("payment completion failed due to status conflict")
 		app.editConflictResponseWithErr(w, r, fmt.Errorf("payment status is not pending: %s", payment.Status))
 		return
 	}
@@ -166,8 +191,13 @@ func (app *Application) handleCheckoutSessionCompleted(
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrCartNotFound):
+			logger.Warn("payment complete attempt failed: cart has expired or was not found", "cart_id", cartId)
 			app.notFoundResponseWithErr(w, r, err)
 		case errors.Is(err, domain.ErrSeatLockExpired), errors.Is(err, domain.ErrSeatConflict):
+			logger.Warn("payment complete attempt failed: seat locks have expired for cart", "cart_id", cartId)
+			app.editConflictResponseWithErr(w, r, err)
+		case errors.Is(err, domain.ErrSeatConflict):
+			logger.Warn("payment complete attempt failed: cart contains seat lock conflicts", "cart_id", cartId)
 			app.editConflictResponseWithErr(w, r, err)
 		default:
 			app.serverErrorResponse(w, r, err)
@@ -193,6 +223,8 @@ func (app *Application) handleCheckoutSessionCompleted(
 		return
 	}
 
+	logger.Info("payment completed, creating final reservation")
+
 	reservation := domain.Reservation{
 		UserID:            userId,
 		ShowtimeID:        showtimeId,
@@ -206,6 +238,8 @@ func (app *Application) handleCheckoutSessionCompleted(
 		app.serverErrorResponse(w, r, fmt.Errorf("failed to create reservation: %w", err))
 		return
 	}
+
+	logger.Info("reservation created successfully", "reservation_id", reservation.ID)
 
 	// remove cart and seat locks
 	// TODO: remove duplicated code
@@ -221,8 +255,7 @@ func (app *Application) handleCheckoutSessionCompleted(
 
 	_, err = pipe.Exec(r.Context())
 	if err != nil {
-		app.serverErrorResponse(w, r, err)
-		return
+		logger.Error("reservation created but failed to clean up cart from redis", "error", err, "cart_id", cartId)
 	}
 
 	w.WriteHeader(http.StatusOK)
