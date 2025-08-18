@@ -27,6 +27,7 @@ import (
 	"github.com/metinatakli/movie-reservation-system/internal/repository"
 	appvalidator "github.com/metinatakli/movie-reservation-system/internal/validator"
 	"github.com/metinatakli/movie-reservation-system/internal/vcs"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"github.com/riandyrn/otelchi"
 	"github.com/stripe/stripe-go/v82"
@@ -265,6 +266,10 @@ func NewRedisClient(cfg Config) (*redis.Client, error) {
 		MaxActiveConns:  cfg.Redis.MaxOpenConns,
 		ConnMaxIdleTime: cfg.Redis.MaxIdleTime,
 	})
+
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
