@@ -31,6 +31,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/riandyrn/otelchi"
 	"github.com/stripe/stripe-go/v82"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel/log/global"
 )
 
 var (
@@ -135,10 +137,10 @@ func loadFlags() Config {
 	return cfg
 }
 
-func newApp(cfg Config) (*Application, error) {
+func newApp(cfg Config, logHandler slog.Handler) (*Application, error) {
 	stripe.Key = cfg.Stripe.SecretKey
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(logHandler)
 
 	validator := appvalidator.NewValidator()
 
@@ -227,7 +229,10 @@ func NewApp(
 
 func Run() error {
 	cfg := loadFlags()
-	app, err := newApp(cfg)
+
+	jsonHandler := slog.NewJSONHandler(os.Stdout, nil)
+
+	app, err := newApp(cfg, jsonHandler)
 	if err != nil {
 		return err
 	}
@@ -236,6 +241,16 @@ func Run() error {
 	if err != nil {
 		app.logger.Error("failed to initialize telemetry", "error", err)
 		return err
+	}
+
+	var finalHandler slog.Handler
+	loggerProvider := global.GetLoggerProvider()
+
+	if loggerProvider != nil {
+		otelHandler := otelslog.NewHandler("movie-reservation-api", otelslog.WithLoggerProvider(loggerProvider))
+
+		finalHandler = NewMultiHandler(jsonHandler, otelHandler)
+		app.logger = slog.New(finalHandler)
 	}
 
 	defer func() {

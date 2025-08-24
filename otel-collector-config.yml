@@ -23,10 +23,15 @@ exporters:
 # 3. Define the processors (how data is transformed in the middle)
 processors:
   batch:
-    # How long to wait before sending a batch, even if it's not full.
     timeout: 1s
-    # How many items (spans, metrics, logs) to put in a batch before sending.
     send_batch_size: 512
+  transform:
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["msg"], body)
+          - set(body, attributes)
+          - delete_matching_keys(attributes, ".*")
 
 # 4. Define the service pipelines (connecting receivers, processors, and exporters)
 service:
@@ -41,5 +46,5 @@ service:
       exporters: [prometheus, debug]
     logs:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch, transform]
       exporters: [otlphttp, debug]

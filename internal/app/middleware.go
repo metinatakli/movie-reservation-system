@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type contextKey string
@@ -89,10 +90,14 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 
 func (app *Application) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		span := trace.SpanFromContext(r.Context())
+
 		requestLogger := app.logger.With(
 			"request_id", middleware.GetReqID(r.Context()),
 			"user_id", app.sessionManager.GetInt(r.Context(), SessionKeyUserId.String()),
 			"session_id", app.sessionManager.Token(r.Context()),
+			"trace_id", span.SpanContext().TraceID().String(),
+			"span_id", span.SpanContext().SpanID().String(),
 		)
 
 		ctx := context.WithValue(r.Context(), loggerContextKey, requestLogger)
@@ -112,11 +117,11 @@ func (app *Application) loggingMiddleware(next http.Handler) http.Handler {
 
 		switch {
 		case lrw.statusCode >= 500:
-			requestLogger.Error("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String())
+			requestLogger.Error("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String(), "remote_addr", r.RemoteAddr)
 		case lrw.statusCode >= 400:
-			requestLogger.Warn("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String())
+			requestLogger.Warn("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String(), "remote_addr", r.RemoteAddr)
 		default:
-			requestLogger.Info("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String())
+			requestLogger.Info("request completed", "status", lrw.statusCode, "bytes", lrw.bytes, "duration", duration.String(), "remote_addr", r.RemoteAddr)
 		}
 	})
 }

@@ -116,6 +116,7 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-exploretraces-app,grafana-metricsdrilldown-app,grafana-lokiexplore-app
     networks:
       - app-network
     depends_on:
